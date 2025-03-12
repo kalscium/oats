@@ -1,24 +1,22 @@
 const std = @import("std");
+const oats = @import("oats");
 
 pub fn main() !void {
-    // Prints to stderr (it's a shortcut based on `std.io.getStdErr()`)
-    std.debug.print("All your {s} are belong to us.\n", .{"codebase"});
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
 
-    // stdout is for the actual output of your application, for example if you
-    // are implementing gzip, then only the compressed bytes should be sent to
-    // stdout, not any debugging messages.
-    const stdout_file = std.io.getStdOut().writer();
-    var bw = std.io.bufferedWriter(stdout_file);
-    const stdout = bw.writer();
+    var file = try std.fs.cwd().createFile("test.bin", .{ .read = true });
+    defer file.close();
 
-    try stdout.print("Run `zig build test` to run the tests.\n", .{});
+    var stack_ptr: u64 = 0;
+    try oats.stack.push(&file, &stack_ptr, "hello, world");
+    try oats.stack.push(&file, &stack_ptr, "help");
 
-    try bw.flush(); // don't forget to flush!
-}
-
-test "simple test" {
-    var list = std.ArrayList(i32).init(std.testing.allocator);
-    defer list.deinit(); // try commenting this out and see if zig detects the memory leak!
-    try list.append(42);
-    try std.testing.expectEqual(@as(i32, 42), list.pop());
+    var read_ptr: u64 = 0;
+    while (read_ptr != stack_ptr) {
+        const value = try oats.stack.readStackEntry(allocator, &file, &read_ptr);
+        defer allocator.free(value);
+        std.debug.print("{s}\n", .{value});
+    }
 }
