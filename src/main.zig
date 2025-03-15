@@ -19,4 +19,12 @@ pub fn main() !void {
         defer allocator.free(value);
         std.debug.print("{s}\n", .{value});
     }
+
+    // pack and unpack
+    const features = oats.item.Features{ .id = null, .date = 56 };
+    const packed_contents = try oats.item.pack(allocator, features, "hello, world");
+    defer allocator.free(packed_contents);
+    const unpacked = oats.item.unpack(packed_contents);
+    std.debug.print("features: {any}\n", .{unpacked.features});
+    std.debug.print("contents: {s}\n", .{unpacked.contents});
 }

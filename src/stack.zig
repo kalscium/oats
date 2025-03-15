@@ -7,7 +7,7 @@ pub fn push(writer: *std.fs.File, stack_ptr: *u64, bytes: []const u8) !void {
     try writeInt(u32, @intCast(bytes.len), writer); // write the last padding length
 
     // update the stack ptr
-    stack_ptr.* += bytes.len + comptime @bitSizeOf(u32)/8 * 2;
+    stack_ptr.* += bytes.len + comptime @sizeOf(u32) * 2;
 }
 
 /// Reads a big-endian number of a specified type from a file and returns it
@@ -49,7 +49,7 @@ pub fn writeInt(comptime T: anytype, val: T, file: *std.fs.File) !void {
 pub fn pop(allocator: std.mem.Allocator, reader: *std.fs.File, stack_ptr: *u64) ![]const u8 {
     // seek to the size of a u32 before the stack_ptr so you can read the
     // correct value
-    stack_ptr.* -= @bitSizeOf(u32)/8;
+    stack_ptr.* -= @sizeOf(u32);
     try reader.seekTo(stack_ptr.*);
     const length = try readInt(u32, reader.reader());
 
@@ -60,7 +60,7 @@ pub fn pop(allocator: std.mem.Allocator, reader: *std.fs.File, stack_ptr: *u64) 
     _ = try reader.reader().readAll(buffer);
 
     // update the stack_ptr to before the first padding length
-    stack_ptr.* -= @bitSizeOf(u32)/8;
+    stack_ptr.* -= @sizeOf(u32);
 
     // return the contents
     return buffer;
@@ -78,13 +78,13 @@ pub fn readStackEntry(allocator: std.mem.Allocator, reader: *std.fs.File, read_p
 
     // read the length of the stack entry and progress the read_ptr
     const length = try readInt(u32, reader);
-    read_ptr.* += @bitSizeOf(u32)/8;
+    read_ptr.* += @sizeOf(u32);
 
     // read and allocate the actual contents of the stack entry
     const buffer: []u8 = try allocator.alloc(u8, length);
     _ = try reader.readAll(buffer);
 
     // update the read ptr and return
-    read_ptr.* += length + @bitSizeOf(u32)/8;
+    read_ptr.* += length + @sizeOf(u32);
     return buffer;
 }
