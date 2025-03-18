@@ -1,11 +1,12 @@
 const std = @import("std");
+const oats = @import("root.zig");
 
 /// The location of the major version within the database file
-pub const maj_ver_loc = 0;
+pub const maj_ver_loc = oats.magic_seq.len;
 /// The location of the stack ptr within the database file
-pub const stack_ptr_loc = @sizeOf(u8);
+pub const stack_ptr_loc = maj_ver_loc + @sizeOf(u8);
 /// The location of the start of the stack within the database file
-pub const stack_start_loc = @sizeOf(u8) + @sizeOf(u64);
+pub const stack_start_loc = stack_ptr_loc + @sizeOf(u64);
 
 /// Pushes a value onto a 'stack' by writing to a file
 pub fn push(writer: *std.fs.File, stack_ptr: *u64, bytes: []const u8) !void {

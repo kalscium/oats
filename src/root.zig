@@ -6,6 +6,9 @@ const std = @import("std");
 /// The current major version of this cli (semantic versioning)
 pub const maj_ver = 0;
 
+/// The magic sequence for oats
+pub const magic_seq = "oats";
+
 /// Returns the path of the oats stack/database, owned by the caller
 pub fn getHome(allocator: std.mem.Allocator) ![]const u8 {
     // get env map

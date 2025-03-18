@@ -22,9 +22,13 @@ pub fn main() !void {
         var file = try std.fs.createFileAbsolute(path, .{});
         defer file.close();
 
+        // write the magic sequence
+        try file.writeAll(oats.magic_seq);
+
         // write the major version and stack ptr
         try oats.stack.writeInt(u8, oats.maj_ver, &file);
         try oats.stack.writeInt(u64, oats.stack.stack_start_loc, &file);
+
         return;
     }
 
@@ -48,6 +52,11 @@ pub fn main() !void {
         defer allocator.free(path);
         var file = try std.fs.openFileAbsolute(path, .{ .lock = .exclusive, .mode = .read_write });
         defer file.close();
+
+        // double-check the magic sequence
+        var magic: [oats.magic_seq.len]u8 = undefined;
+        _ = try file.readAll(&magic);
+        if (!std.mem.eql(u8, &magic, oats.magic_seq)) return error.MagicMismatch;
 
         // make sure it's of the right major version
         const maj_ver = try oats.stack.readInt(u8, &file);
