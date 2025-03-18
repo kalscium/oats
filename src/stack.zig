@@ -9,6 +9,7 @@ pub const stack_start_loc = @sizeOf(u8) + @sizeOf(u64);
 
 /// Pushes a value onto a 'stack' by writing to a file
 pub fn push(writer: *std.fs.File, stack_ptr: *u64, bytes: []const u8) !void {
+    try writer.seekTo(stack_ptr.*);
     try writeInt(u32, @intCast(bytes.len), writer); // write the first padding length
     try writer.writeAll(bytes); // write the actual contents
     try writeInt(u32, @intCast(bytes.len), writer); // write the last padding length

@@ -28,6 +28,43 @@ pub fn main() !void {
         return;
     }
 
+    // checks for the 'push' command
+    if (std.mem.eql(u8, args[1], "push")) {
+        // check for the arg
+        if (args.len < 3) {
+            printHelp();
+            return error.ExpectedArgument;
+        }
+
+        // if database file doesn't exist throw error
+        const path = try oats.getHome(allocator);
+        if (std.fs.accessAbsolute(path, .{})) {}
+        else |err| {
+            std.debug.print("info: no oats database found, try running 'oats wipe' to initialize a new one\n", .{});
+            return err;
+        }
+
+        // open the database file
+        defer allocator.free(path);
+        var file = try std.fs.openFileAbsolute(path, .{ .lock = .exclusive, .mode = .read_write });
+        defer file.close();
+
+        // make sure it's of the right major version
+        const maj_ver = try oats.stack.readInt(u8, &file);
+        if (maj_ver != oats.maj_ver) return error.MajVersionMismatch;
+
+        // get the stack ptr
+        var stack_ptr = try oats.stack.readInt(u64, &file);
+
+        // push the value
+        try oats.stack.push(&file, &stack_ptr, args[2]);
+
+        // update the stack ptr
+        try file.seekTo(oats.stack.stack_ptr_loc);
+        try oats.stack.writeInt(u64, stack_ptr, &file);
+        return;
+    }
+
     // only occurs when there is an invalid command
     printHelp();
     return error.CommandNotFound;
