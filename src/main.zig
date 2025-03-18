@@ -65,8 +65,14 @@ pub fn main() !void {
         // get the stack ptr
         var stack_ptr = try oats.stack.readInt(u64, &file);
 
-        // push the value
-        try oats.stack.push(&file, &stack_ptr, args[2]);
+        // get the time & construct the stack item
+        const time = std.time.timestamp();
+        const features: oats.item.Features = .{ .timestamp = time };
+        const item = try oats.item.pack(allocator, @bitCast(time), features, args[2]);
+        defer allocator.free(item);
+
+        // push the item
+        try oats.stack.push(&file, &stack_ptr, item);
 
         // update the stack ptr
         try file.seekTo(oats.stack.stack_ptr_loc);

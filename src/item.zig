@@ -7,21 +7,21 @@ const std = @import("std");
 pub const FeaturesBitfield = packed struct(u8) {
     /// (does nothing now) in case in the future I need more features
     extended: bool = false,
-    has_date: bool,
+    has_timestamp: bool,
 
-    _padding: u5 = 0,
+    _padding: u6 = 0,
 };
 
 /// The actual data of the features defined by the features bitfield
 pub const Features = struct {
     /// The UNIX timestamp creation date of the stack item
-    date: ?u64,
+    timestamp: ?i64,
 };
 
 /// Calculates the size based upon the features enabled
 pub fn featuresSize(features: Features) usize {
     var size: usize = @sizeOf(FeaturesBitfield);
-    if (features.date != null) size += @sizeOf(u64);
+    if (features.timestamp != null) size += @sizeOf(@TypeOf(features.timestamp));
 
     return size;
 }
@@ -40,14 +40,13 @@ pub fn pack(allocator: std.mem.Allocator, id: u64, features: Features, contents:
 
     // write the bitfield
     const bitfield = FeaturesBitfield{
-        .has_id = features.id != null,
-        .has_date = features.date != null,
+        .has_timestamp = features.timestamp != null,
     };
     buffer[offset] = std.mem.nativeToBig(u8, @bitCast(bitfield));
     offset = 1;
 
     // write the date
-    if (features.date) |date| {
+    if (features.timestamp) |date| {
         std.mem.copyForwards(u8, buffer[offset..], std.mem.asBytes(&std.mem.nativeToBig(@TypeOf(date), date)));
         offset += @sizeOf(@TypeOf(date));
     }
@@ -65,7 +64,7 @@ pub fn unpack(item: []const u8) struct{ id: u64, features: Features, contents: [
     var offset: usize = 0;
 
     // result
-    var features = Features{ .date = null };
+    var features = Features{ .timestamp = null };
 
     // decode the id
     const id = std.mem.bigToNative(u64, std.mem.bytesToValue(u64, item[0..@sizeOf(u64)]));
@@ -76,9 +75,9 @@ pub fn unpack(item: []const u8) struct{ id: u64, features: Features, contents: [
     offset += @sizeOf(u8);
 
     // decode the date
-    if (features_bitfield.has_date) {
-        features.date = std.mem.bigToNative(u64, std.mem.bytesToValue(u64, item[offset..offset+@sizeOf(u64)]));
-        offset += @sizeOf(u64);
+    if (features_bitfield.has_timestamp) {
+        features.timestamp = std.mem.bigToNative(@TypeOf(features.timestamp), std.mem.bytesToValue(@TypeOf(features.timestamp), item[offset..offset+@sizeOf(@TypeOf(features.timestamp))]));
+        offset += @sizeOf(@TypeOf(features.timestamp));
     }
 
     return .{
