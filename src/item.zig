@@ -21,7 +21,7 @@ pub const Features = struct {
 /// Calculates the size based upon the features enabled
 pub fn featuresSize(features: Features) usize {
     var size: usize = @sizeOf(FeaturesBitfield);
-    if (features.timestamp != null) size += @sizeOf(@TypeOf(features.timestamp));
+    if (features.timestamp != null) size += @sizeOf(@TypeOf(features.timestamp.?));
 
     return size;
 }
@@ -35,7 +35,7 @@ pub fn pack(allocator: std.mem.Allocator, id: u64, features: Features, contents:
     var offset: usize = 0;
 
     // write the id
-    std.mem.copyForwards(u8, buffer, std.mem.asBytes(&std.mem.nativeToBig(u64, id)));
+    @memcpy(buffer[0..@sizeOf(u64)], std.mem.asBytes(&std.mem.nativeToBig(u64, id)));
     offset += @sizeOf(u64);
 
     // write the bitfield
@@ -43,16 +43,16 @@ pub fn pack(allocator: std.mem.Allocator, id: u64, features: Features, contents:
         .has_timestamp = features.timestamp != null,
     };
     buffer[offset] = std.mem.nativeToBig(u8, @bitCast(bitfield));
-    offset = 1;
+    offset += @sizeOf(FeaturesBitfield);
 
     // write the date
     if (features.timestamp) |date| {
-        std.mem.copyForwards(u8, buffer[offset..], std.mem.asBytes(&std.mem.nativeToBig(@TypeOf(date), date)));
+        @memcpy(buffer[offset..offset+@sizeOf(@TypeOf(date))], std.mem.asBytes(&std.mem.nativeToBig(@TypeOf(date), date)));
         offset += @sizeOf(@TypeOf(date));
     }
 
     // write the rest of the contents
-    std.mem.copyForwards(u8, buffer[offset..], contents);
+    @memcpy(buffer[offset..], contents);
 
     return buffer;
 }
