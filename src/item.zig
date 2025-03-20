@@ -76,8 +76,8 @@ pub fn unpack(item: []const u8) struct{ id: u64, features: Features, contents: [
 
     // decode the date
     if (features_bitfield.has_timestamp) {
-        features.timestamp = std.mem.bigToNative(@TypeOf(features.timestamp), std.mem.bytesToValue(@TypeOf(features.timestamp), item[offset..offset+@sizeOf(@TypeOf(features.timestamp))]));
-        offset += @sizeOf(@TypeOf(features.timestamp));
+        features.timestamp = std.mem.bigToNative(@TypeOf(features.timestamp.?), std.mem.bytesToValue(@TypeOf(features.timestamp.?), item[offset..offset+@sizeOf(@TypeOf(features.timestamp.?))]));
+        offset += @sizeOf(@TypeOf(features.timestamp.?));
     }
 
     return .{

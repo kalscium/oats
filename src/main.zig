@@ -67,13 +67,65 @@ pub fn main() !void {
         var stack_ptr = try file.reader().readInt(u64, .big);
 
         // get the time & construct the stack item
-        const time = std.time.timestamp();
+        const time = std.time.milliTimestamp();
         const features: oats.item.Features = .{ .timestamp = time };
         const item = try oats.item.pack(allocator, @bitCast(time), features, args[2]);
         defer allocator.free(item);
 
         // push the item
         try oats.stack.push(file, &stack_ptr, item);
+
+        // update the stack ptr
+        try file.seekTo(oats.stack.stack_ptr_loc);
+        try file.writer().writeInt(u64, stack_ptr, .big);
+        return;
+    }
+
+    // checks for the 'pop' command
+    if (std.mem.eql(u8, args[1], "pop")) {
+        // if database file doesn't exist throw error
+        const path = try oats.getHome(allocator);
+        if (std.fs.accessAbsolute(path, .{})) {}
+        else |err| {
+            std.debug.print("info: no oats database found, try running 'oats wipe' to initialize a new one\n", .{});
+            return err;
+        }
+
+        // open the database file
+        defer allocator.free(path);
+        var file = try std.fs.openFileAbsolute(path, .{ .lock = .exclusive, .mode = .read_write });
+        defer file.close();
+
+        // double-check the magic sequence
+        var magic: [oats.magic_seq.len]u8 = undefined;
+        _ = try file.readAll(&magic);
+        if (!std.mem.eql(u8, &magic, oats.magic_seq)) return error.MagicMismatch;
+
+        // make sure it's of the right major version
+        const maj_ver = try file.reader().readInt(u8, .big);
+        if (maj_ver != oats.maj_ver) return error.MajVersionMismatch;
+
+        // get the stack ptr
+        var stack_ptr = try file.reader().readInt(u64, .big);
+
+        // parse the arg as int
+        const to_pop = if (args.len > 2) try std.fmt.parseInt(usize, args[2], 10) else 1;
+
+        // print it
+        std.debug.print("<<< POPPED OATS (LATEST FIRST) >>>\n", .{});
+        for (0..to_pop) |_| {
+            // double check there are items to pop
+            if (stack_ptr == oats.stack.stack_start_loc)
+                return error.EmptyStack;
+
+            // pop the last item and decode it
+            const raw_item = try oats.stack.pop(allocator, file, &stack_ptr);
+            defer allocator.free(raw_item);
+            const item = oats.item.unpack(raw_item);
+
+            try oats.format.normalFeatures(allocator, std.io.getStdErr(), item.id, item.features);
+            try std.fmt.format(std.io.getStdOut().writer(), "{s}\n", .{item.contents});
+        }
 
         // update the stack ptr
         try file.seekTo(oats.stack.stack_ptr_loc);
@@ -93,7 +145,7 @@ fn printHelp() void {
         \\Commands:
         \\    session       | starts an interactive session that pushes thoughts/notes to the stack from stdin
         \\    push <text>   | push a singular thought/note to the stack
-        \\    pop           | pops a thought/note off the stack (removes it)
+    	\\    pop  <n>      | pops <n> (defaults to 1) items off the stack (removes it)
         \\    tail <n>      | prints the last <n> stack items (thoughts/notes)
         \\    head <n>      | prints the first <n> stack items (thoughts/notes)
         \\    print         | prints all the contents of the items on the stack to stdout

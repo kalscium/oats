@@ -32,13 +32,13 @@ pub fn pop(allocator: std.mem.Allocator, file: std.fs.File, stack_ptr: *u64) ![]
     // seek to the size of a u32 before the stack_ptr so you can read the
     // correct value
     stack_ptr.* -= @sizeOf(u32);
-    try reader.seekTo(stack_ptr.*);
+    try file.seekTo(stack_ptr.*);
     const length = try reader.readInt(u32, .big);
 
     // seek to the start of the stack entry's contents, read it to a buffer
     stack_ptr.* -= length;
     const buffer: []u8 = try allocator.alloc(u8, length);
-    try reader.seekTo(stack_ptr.*);
+    try file.seekTo(stack_ptr.*);
     _ = try reader.readAll(buffer);
 
     // update the stack_ptr to before the first padding length
