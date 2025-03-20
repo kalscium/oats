@@ -20,14 +20,15 @@ pub fn main() !void {
         const path = try oats.getHome(allocator);
         defer allocator.free(path);
         var file = try std.fs.createFileAbsolute(path, .{});
+        var writer = file.writer();
         defer file.close();
 
         // write the magic sequence
         try file.writeAll(oats.magic_seq);
 
         // write the major version and stack ptr
-        try oats.stack.writeInt(u8, oats.maj_ver, &file);
-        try oats.stack.writeInt(u64, oats.stack.stack_start_loc, &file);
+        try writer.writeInt(u8, oats.maj_ver, .big);
+        try writer.writeInt(u64, oats.stack.stack_start_loc, .big);
 
         return;
     }
@@ -59,11 +60,11 @@ pub fn main() !void {
         if (!std.mem.eql(u8, &magic, oats.magic_seq)) return error.MagicMismatch;
 
         // make sure it's of the right major version
-        const maj_ver = try oats.stack.readInt(u8, &file);
+        const maj_ver = try file.reader().readInt(u8, .big);
         if (maj_ver != oats.maj_ver) return error.MajVersionMismatch;
 
         // get the stack ptr
-        var stack_ptr = try oats.stack.readInt(u64, &file);
+        var stack_ptr = try file.reader().readInt(u64, .big);
 
         // get the time & construct the stack item
         const time = std.time.timestamp();
@@ -72,11 +73,11 @@ pub fn main() !void {
         defer allocator.free(item);
 
         // push the item
-        try oats.stack.push(&file, &stack_ptr, item);
+        try oats.stack.push(file, &stack_ptr, item);
 
         // update the stack ptr
         try file.seekTo(oats.stack.stack_ptr_loc);
-        try oats.stack.writeInt(u64, stack_ptr, &file);
+        try file.writer().writeInt(u64, stack_ptr, .big);
         return;
     }
 
