@@ -15,6 +15,13 @@ pub fn main() !void {
     if (args.len == 1)
         return printHelp();
 
+    // checks for the 'help' command
+    if (std.mem.eql(u8, args[1], "--help") or std.mem.eql(u8, args[1], "-h"))
+        return printHelp();
+    // checks for the 'version' command
+    if (std.mem.eql(u8, args[1], "--version") or std.mem.eql(u8, args[1], "-V"))
+        return std.debug.print("oats {s}\n", .{oats.version});
+
     // checks for the 'wipe' command
     if (std.mem.eql(u8, args[1], "wipe")) {
         const path = try oats.getHome(allocator);
