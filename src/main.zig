@@ -19,6 +19,17 @@ pub fn main() !void {
     if (std.mem.eql(u8, args[1], "wipe")) {
         const path = try oats.getHome(allocator);
         defer allocator.free(path);
+
+        // check if the file exists or not if so, then make sure the user knows
+        // what they're doing
+        if (std.fs.accessAbsolute(path, .{})) |_|
+            if (args.len > 2 and std.mem.eql(u8, args[2], "--everything")) {}
+            else {
+                std.debug.print("warning: pre-existing oat database detected, include the flag '--everything' after the wipe command to confirm the wipe\n", .{});
+                return error.PreexistingOatsDB;
+            }
+        else |_| {}
+
         var file = try std.fs.createFileAbsolute(path, .{});
         var writer = file.writer();
         defer file.close();
