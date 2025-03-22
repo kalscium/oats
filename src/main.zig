@@ -301,6 +301,52 @@ pub fn main() !void {
         return;
     }
 
+    // checks for the 'raw' command
+    if (std.mem.eql(u8, args[1], "raw")) {
+        // if database file doesn't exist throw error
+        const path = try oats.getHome(allocator);
+        if (std.fs.accessAbsolute(path, .{})) {}
+        else |err| {
+            std.debug.print("info: no oats database found, try running 'oats wipe' to initialize a new one\n", .{});
+            return err;
+        }
+
+        // open the read database file
+        defer allocator.free(path);
+        var file = try std.fs.openFileAbsolute(path, .{ .lock = .exclusive, .mode = .read_write });
+        defer file.close();
+
+        // double-check the magic sequence
+        var magic: [oats.magic_seq.len]u8 = undefined;
+        _ = try file.readAll(&magic);
+        if (!std.mem.eql(u8, &magic, oats.magic_seq)) return error.MagicMismatch;
+
+        // make sure it's of the right major version
+        const maj_ver = try file.reader().readInt(u8, .big);
+        if (maj_ver != oats.maj_ver) return error.MajVersionMismatch;
+
+        // get the stack ptr
+        const stack_ptr = try file.reader().readInt(u64, .big);
+        var read_ptr: u64 = 0;
+
+        // read and write everything in blocks of 64K until stack_ptr
+        const buffer = try allocator.alloc(u8, 64 * 1024);
+        defer allocator.free(buffer);
+        const stdout = std.io.getStdOut().writer();
+        try file.seekTo(read_ptr);
+        while (read_ptr < stack_ptr) : (read_ptr += buffer.len) {
+            if (read_ptr + buffer.len >= stack_ptr) {
+                _ = try file.readAll(buffer[0..stack_ptr-read_ptr]);
+                _ = try stdout.writeAll(buffer[0..stack_ptr-read_ptr]);
+            } else {
+                _ = try file.readAll(buffer);
+                _ = try stdout.writeAll(buffer);
+            }
+        }
+
+        return;
+    }
+
     // only occurs when there is an invalid command
     printHelp();
     return error.CommandNotFound;
