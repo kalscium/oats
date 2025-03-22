@@ -144,6 +144,111 @@ pub fn main() !void {
         return;
     }
 
+    // checks for the 'tail' command
+    if (std.mem.eql(u8, args[1], "tail")) {
+        // if database file doesn't exist throw error
+        const path = try oats.getHome(allocator);
+        if (std.fs.accessAbsolute(path, .{})) {}
+        else |err| {
+            std.debug.print("info: no oats database found, try running 'oats wipe' to initialize a new one\n", .{});
+            return err;
+        }
+
+        // open the database file
+        defer allocator.free(path);
+        var file = try std.fs.openFileAbsolute(path, .{ .lock = .exclusive, .mode = .read_write });
+        defer file.close();
+
+        // double-check the magic sequence
+        var magic: [oats.magic_seq.len]u8 = undefined;
+        _ = try file.readAll(&magic);
+        if (!std.mem.eql(u8, &magic, oats.magic_seq)) return error.MagicMismatch;
+
+        // make sure it's of the right major version
+        const maj_ver = try file.reader().readInt(u8, .big);
+        if (maj_ver != oats.maj_ver) return error.MajVersionMismatch;
+
+        // get the stack ptr
+        var stack_ptr = try file.reader().readInt(u64, .big);
+
+        // parse the arg as int
+        const to_pop = if (args.len > 2) try std.fmt.parseInt(usize, args[2], 10) else 1;
+
+        // print it
+        std.debug.print("<<< OATS (LATEST FIRST) >>>\n", .{});
+        for (0..to_pop) |_| {
+            // double check there are items to pop
+            if (stack_ptr == oats.stack.stack_start_loc)
+                return error.EmptyStack;
+
+            // pop the last item and decode it
+            const raw_item = try oats.stack.pop(allocator, file, &stack_ptr);
+            defer allocator.free(raw_item);
+            const item = oats.item.unpack(raw_item);
+
+            try oats.format.normalFeatures(allocator, std.io.getStdErr(), item.id, item.features);
+            try std.fmt.format(std.io.getStdOut().writer(), "{s}\n", .{item.contents});
+        }
+
+        // note how the stack pointer isn't written, so the 'pops' are
+        // temporary and the same as reads
+
+        return;
+    }
+
+    // checks for the 'head' command
+    if (std.mem.eql(u8, args[1], "head")) {
+        // if database file doesn't exist throw error
+        const path = try oats.getHome(allocator);
+        if (std.fs.accessAbsolute(path, .{})) {}
+        else |err| {
+            std.debug.print("info: no oats database found, try running 'oats wipe' to initialize a new one\n", .{});
+            return err;
+        }
+
+        // open the database file
+        defer allocator.free(path);
+        var file = try std.fs.openFileAbsolute(path, .{ .lock = .exclusive, .mode = .read_write });
+        defer file.close();
+
+        // double-check the magic sequence
+        var magic: [oats.magic_seq.len]u8 = undefined;
+        _ = try file.readAll(&magic);
+        if (!std.mem.eql(u8, &magic, oats.magic_seq)) return error.MagicMismatch;
+
+        // make sure it's of the right major version
+        const maj_ver = try file.reader().readInt(u8, .big);
+        if (maj_ver != oats.maj_ver) return error.MajVersionMismatch;
+
+        // get the stack ptr
+        try file.seekTo(oats.stack.stack_ptr_loc);
+        const stack_ptr = try file.reader().readInt(u64, .big);
+
+        // parse the arg as int
+        const to_read = if (args.len > 2) try std.fmt.parseInt(usize, args[2], 10) else 1;
+
+        // read ptr instead of stack ptr (read from start)
+        var read_ptr: u64 = oats.stack.stack_start_loc;
+
+        // print it
+        std.debug.print("<<< OATS (LATEST LAST) >>>\n", .{});
+        for (0..to_read) |_| {
+            // double check there are still items to read
+            if (read_ptr == stack_ptr)
+                return error.EmptyStack;
+
+            // read the next item and decode it
+            const raw_item = try oats.stack.readStackEntry(allocator, file, &read_ptr);
+            defer allocator.free(raw_item);
+            const item = oats.item.unpack(raw_item);
+
+            try oats.format.normalFeatures(allocator, std.io.getStdErr(), item.id, item.features);
+            try std.fmt.format(std.io.getStdOut().writer(), "{s}\n", .{item.contents});
+        }
+
+        return;
+    }
+
     // only occurs when there is an invalid command
     printHelp();
     return error.CommandNotFound;

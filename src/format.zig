@@ -12,7 +12,7 @@ pub fn normalFeatures(allocator: std.mem.Allocator, file: std.fs.File, id: u64, 
         const largest_id = std.fmt.comptimePrint("{}", .{std.math.maxInt(u64)}).len;
 
         // additional variables
-        const date = 26; // iso-8601 date size
+        const date = 25; // iso-8601 date size
         const padding = 12; // padding and also the labels
         
         break :blk largest_id + date + padding;
@@ -40,7 +40,7 @@ pub fn normalFeatures(allocator: std.mem.Allocator, file: std.fs.File, id: u64, 
         defer allocator.free(date_str);
         try file.writeAll(", date: ");
         try file.writeAll(date_str);
-        current_size += 32 + 8;
+        current_size += 25 + 8;
     }
 
     // fill the gaps so the separator is in the same place
