@@ -249,6 +249,51 @@ pub fn main() !void {
         return;
     }
 
+    // checks for the 'count' command
+    if (std.mem.eql(u8, args[1], "count")) {
+        // if database file doesn't exist throw error
+        const path = try oats.getHome(allocator);
+        if (std.fs.accessAbsolute(path, .{})) {}
+        else |err| {
+            std.debug.print("info: no oats database found, try running 'oats wipe' to initialize a new one\n", .{});
+            return err;
+        }
+
+        // open the database file
+        defer allocator.free(path);
+        var file = try std.fs.openFileAbsolute(path, .{ .lock = .exclusive, .mode = .read_write });
+        defer file.close();
+
+        // double-check the magic sequence
+        var magic: [oats.magic_seq.len]u8 = undefined;
+        _ = try file.readAll(&magic);
+        if (!std.mem.eql(u8, &magic, oats.magic_seq)) return error.MagicMismatch;
+
+        // make sure it's of the right major version
+        const maj_ver = try file.reader().readInt(u8, .big);
+        if (maj_ver != oats.maj_ver) return error.MajVersionMismatch;
+
+        // get the stack ptr
+        try file.seekTo(oats.stack.stack_ptr_loc);
+        const stack_ptr = try file.reader().readInt(u64, .big);
+
+        // read ptr instead of stack ptr (read from start)
+        var read_ptr: u64 = oats.stack.stack_start_loc;
+
+        // count the stack items
+        var count: usize = 0;
+        while (read_ptr != stack_ptr) {
+            allocator.free(try oats.stack.readStackEntry(allocator, file, &read_ptr));
+            count += 1;
+        }
+
+        std.debug.print("stack item count: ", .{});
+        try std.fmt.format(std.io.getStdOut().writer(), "{}", .{count});
+        try std.io.getStdOut().writer().writeByte('\n');
+
+        return;
+    }
+
     // only occurs when there is an invalid command
     printHelp();
     return error.CommandNotFound;
@@ -264,6 +309,7 @@ fn printHelp() void {
     	\\    pop  <n>      | pops <n> (defaults to 1) items off the stack (removes it)
         \\    tail <n>      | prints the last <n> stack items (thoughts/notes)
         \\    head <n>      | prints the first <n> stack items (thoughts/notes)
+        \\    count         | counts the amount of items on the stack and prints it to stdout
         \\    print         | prints all the contents of the items on the stack to stdout
         \\    markdown      | pretty-prints the items on the stack in the markdown format
         \\    raw           | writes the raw contents of the database to stdout (pipe to a file for backups)
