@@ -1,3 +1,5 @@
+pub const session = @import("session.zig");
+
 const std = @import("std");
 const oats = @import("oats");
 
@@ -6,6 +8,8 @@ pub fn main() !void {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
     const allocator = arena.allocator();
+
+    try session.session(allocator);
 
     // get the arguments
     const args = try std.process.argsAlloc(allocator);
@@ -69,7 +73,7 @@ pub fn main() !void {
 
         // open the database file
         defer allocator.free(path);
-        var file = try std.fs.openFileAbsolute(path, .{ .lock = .exclusive, .mode = .read_write });
+        var file = try std.fs.openFileAbsolute(path, .{ .mode = .read_write });
         defer file.close();
 
         // double-check the magic sequence
@@ -111,7 +115,7 @@ pub fn main() !void {
 
         // open the database file
         defer allocator.free(path);
-        var file = try std.fs.openFileAbsolute(path, .{ .lock = .exclusive, .mode = .read_write });
+        var file = try std.fs.openFileAbsolute(path, .{ .mode = .read_write });
         defer file.close();
 
         // double-check the magic sequence
@@ -163,7 +167,7 @@ pub fn main() !void {
 
         // open the database file
         defer allocator.free(path);
-        var file = try std.fs.openFileAbsolute(path, .{ .lock = .exclusive, .mode = .read_write });
+        var file = try std.fs.openFileAbsolute(path, .{ .mode = .read_write });
         defer file.close();
 
         // double-check the magic sequence
@@ -215,7 +219,7 @@ pub fn main() !void {
 
         // open the database file
         defer allocator.free(path);
-        var file = try std.fs.openFileAbsolute(path, .{ .lock = .exclusive, .mode = .read_write });
+        var file = try std.fs.openFileAbsolute(path, .{ .mode = .read_write });
         defer file.close();
 
         // double-check the magic sequence
@@ -268,7 +272,7 @@ pub fn main() !void {
 
         // open the database file
         defer allocator.free(path);
-        var file = try std.fs.openFileAbsolute(path, .{ .lock = .exclusive, .mode = .read_write });
+        var file = try std.fs.openFileAbsolute(path, .{ .mode = .read_write });
         defer file.close();
 
         // double-check the magic sequence
@@ -313,7 +317,7 @@ pub fn main() !void {
 
         // open the read database file
         defer allocator.free(path);
-        var file = try std.fs.openFileAbsolute(path, .{ .lock = .exclusive, .mode = .read_write });
+        var file = try std.fs.openFileAbsolute(path, .{ .mode = .read_write });
         defer file.close();
 
         // double-check the magic sequence

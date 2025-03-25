@@ -44,6 +44,7 @@ pub fn build(b: *std.Build) void {
 
     // add imports
     lib.root_module.addImport("datetime", datetime.module("zig-datetime"));
+    exe.linkLibC();
     exe.root_module.addImport("oats", &lib.root_module);
 
     // This declares intent for the executable to be installed into the
