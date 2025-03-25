@@ -233,6 +233,9 @@ pub fn readLine(allocator: std.mem.Allocator, comptime prompt_len: usize, prompt
                 try stdout.writeAll(&.{ 27, 91, 68 }); // otherwise just go left
             }
             cursor -= 1;
+            // write a space to overwrite the deleted character if the cursor is at zero
+            if (cursor == 0)
+                try stdout.writeAll(" \x1B[1D");
             _ = line.orderedRemove(cursor);
             // you want to print the state of the lines *after* deletion, not before
             try wrapLine(line.items, cursor+1, coloumns, &free_lines, wrap_prompt, stdout);
@@ -260,6 +263,12 @@ pub fn readLine(allocator: std.mem.Allocator, comptime prompt_len: usize, prompt
             try stdout.writeAll(&.{ 27, 91, 67 });
         }
     } else |_| {}
+
+    // cleanup (jump after all the lines and free lines and create a new-line)
+    const cleanup_jump = free_lines + line.items.len / coloumns - cursor / coloumns;
+    if (cleanup_jump != 0)
+        try std.fmt.format(stdout, "\x1B[{}B", .{cleanup_jump});
+    try std.fmt.format(stdout, "\x1B[{}G\n", .{prompt_len});
 
     return line;
 }
@@ -289,9 +298,6 @@ pub fn session(allocator: std.mem.Allocator, file: std.fs.File) !void {
 
         // skip empty lines
         if (line.items.len == 0) continue;
-
-        // print new-line
-        try std.io.getStdOut().writer().writeByte('\n');
 
         // pack the read line
         const timestamp = std.time.milliTimestamp();
