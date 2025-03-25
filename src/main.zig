@@ -9,8 +9,6 @@ pub fn main() !void {
     defer arena.deinit();
     const allocator = arena.allocator();
 
-    try session.session(allocator);
-
     // get the arguments
     const args = try std.process.argsAlloc(allocator);
     defer allocator.free(args);
@@ -51,6 +49,36 @@ pub fn main() !void {
         // write the major version and stack ptr
         try writer.writeInt(u8, oats.maj_ver, .big);
         try writer.writeInt(u64, oats.stack.stack_start_loc, .big);
+
+        return;
+    }
+
+    // checks for the 'session' command
+    if (std.mem.eql(u8, args[1], "session")) {
+        // if database file doesn't exist throw error
+        const path = try oats.getHome(allocator);
+        if (std.fs.accessAbsolute(path, .{})) {}
+        else |err| {
+            std.debug.print("info: no oats database found, try running 'oats wipe' to initialize a new one\n", .{});
+            return err;
+        }
+
+        // open the database file
+        defer allocator.free(path);
+        var file = try std.fs.openFileAbsolute(path, .{ .mode = .read_write });
+        defer file.close();
+
+        // double-check the magic sequence
+        var magic: [oats.magic_seq.len]u8 = undefined;
+        _ = try file.readAll(&magic);
+        if (!std.mem.eql(u8, &magic, oats.magic_seq)) return error.MagicMismatch;
+
+        // make sure it's of the right major version
+        const maj_ver = try file.reader().readInt(u8, .big);
+        if (maj_ver != oats.maj_ver) return error.MajVersionMismatch;
+
+        // start the stack session
+        try session.session(allocator, file);
 
         return;
     }

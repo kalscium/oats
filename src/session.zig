@@ -265,13 +265,7 @@ pub fn readLine(allocator: std.mem.Allocator, comptime prompt_len: usize, prompt
 }
 
 /// Starts the interactive oats session
-pub fn session(allocator: std.mem.Allocator) !void {
-    // open the database
-    const path = try oats.getHome(allocator);
-    defer allocator.free(path);
-    var file = try std.fs.openFileAbsolute(path, .{ .mode = .read_write });
-    defer file.close();
-
+pub fn session(allocator: std.mem.Allocator, file: std.fs.File) !void {
     std.debug.print(
         \\<<< OATS SESSION >>>
         \\* welcome to a space for random thughts or notes!
@@ -287,12 +281,30 @@ pub fn session(allocator: std.mem.Allocator) !void {
     const orig_termios = enableRawMode();
     defer _ = termios.tcsetattr(termios.STDIN_FILENO, termios.TCSAFLUSH, &orig_termios);
 
+    // session loop
     while (true) {
         // read the line
         const line = try readLine(allocator, 4, "\x1b[35m=>> \x1b[0m", "\x1b[30;1m... \x1b[0m");
         defer line.deinit();
 
-        // print the results
-        std.debug.print("\nresult: {s}\n", .{line.items});
+        // skip empty lines
+        if (line.items.len == 0) continue;
+
+        // print new-line
+        try std.io.getStdOut().writer().writeByte('\n');
+
+        // pack the read line
+        const timestamp = std.time.milliTimestamp();
+        const item = try oats.item.pack(allocator, @bitCast(timestamp), .{ .timestamp = timestamp }, line.items);
+        defer allocator.free(item);
+
+        // read the stack ptr
+        try file.seekTo(oats.stack.stack_ptr_loc);
+        var stack_ptr = try file.reader().readInt(u64, .big);
+
+        // push and also write the stack ptr
+        try oats.stack.push(file, &stack_ptr, item);
+        try file.seekTo(oats.stack.stack_ptr_loc);
+        try file.writer().writeInt(u64, stack_ptr, .big);
     }
 }
