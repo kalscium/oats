@@ -89,9 +89,7 @@ pub fn wrapLine(
     }
 
     // set the free_lines state to the position of the cursor
-    // 
-    // optional +1 for if the cursor perfectly fits on the console line (wrapping)
-    free_lines.* += total_ln - offset_ln + if (cursor % coloumns == 0) @as(usize, 1) else 0;
+    free_lines.* += total_ln - offset_ln;
 
     // move it back to it's starting position and then unhide it
     try stdout.writeAll("\x1B[u\x1B[?25h");
@@ -99,9 +97,6 @@ pub fn wrapLine(
 
 /// Reads a line from stdin with the specified prompt in raw mode and returns it, owned by caller
 pub fn readLine(allocator: std.mem.Allocator, comptime prompt_len: usize, prompt: []const u8, comptime wrap_prompt: []const u8) !std.ArrayList(u8) {
-    if (comptime prompt_len != prompt_len)
-        @compileError("prompts have different lengths");
-
     var line = std.ArrayList(u8).init(allocator);
 
     var cursor: usize = line.items.len; // index into the line
@@ -114,6 +109,8 @@ pub fn readLine(allocator: std.mem.Allocator, comptime prompt_len: usize, prompt
     // get window size
     var winsize: ioctl.winsize = undefined;
     _ = ioctl.ioctl(termios.STDOUT_FILENO, ioctl.TIOCGWINSZ, &winsize);
+
+    const coloumns = @as(usize, winsize.ws_col) - prompt_len;
 
     // keep track of free lines to write to
     var free_lines: usize = 0;
@@ -151,7 +148,7 @@ pub fn readLine(allocator: std.mem.Allocator, comptime prompt_len: usize, prompt
             // 
             // if you've already reached the start of the console line, then go
             // to the above one (line wrapping)
-            if (cursor % (winsize.ws_col-prompt_len) == 0) {
+            if (cursor % coloumns == 0) {
                 try stdout.writeAll("\x1B[1A"); // go one up
                 try std.fmt.format(stdout, "\x1B[{}G", .{winsize.ws_col}); // go to end of line
                 free_lines += 1;
@@ -171,7 +168,7 @@ pub fn readLine(allocator: std.mem.Allocator, comptime prompt_len: usize, prompt
             // print changes to terminal
             // 
             // if you reach the end of the line then go to the next one (line wrapping)
-            if (cursor % (winsize.ws_col-prompt_len) == winsize.ws_col-prompt_len-1) {
+            if (cursor % coloumns == coloumns-1) {
                 try stdout.writeAll("\x1B[1B"); // go one down
                 try std.fmt.format(stdout, "\x1B[{}G", .{prompt_len+1}); // skip the prompt
                 free_lines -= 1;
@@ -180,6 +177,35 @@ pub fn readLine(allocator: std.mem.Allocator, comptime prompt_len: usize, prompt
             }
 
             cursor += 1;
+            continue;
+        }
+
+        // check for up arrow (make sure it's not the first line)
+        if (escape_arrow and char == 65 and cursor / coloumns > 0) {
+            escape = false;
+            escape_arrow = false;
+
+            // go to the above line at the same point (remainder)
+            cursor = cursor - coloumns;
+            try stdout.writeAll("\x1B[1A");
+            continue;
+        }
+
+        // check for down arrow (make sure there's lines below it)
+        if (escape_arrow and char == 66 and line.items.len / coloumns - cursor / coloumns > 0) {
+            escape = false;
+            escape_arrow = false;
+
+            // go to the below line, at the cursor coloumn or end of the line, whichever is closer
+            const estimated = cursor + coloumns;
+            if (line.items.len < estimated) {
+                try std.fmt.format(stdout, "\x1B[1B\x1B[{}D", .{estimated-line.items.len}); // move to the end of the line
+                cursor = line.items.len;
+            } else {
+                try stdout.writeAll("\x1B[1B");
+                cursor = estimated;
+            }
+
             continue;
         }
 
@@ -200,7 +226,7 @@ pub fn readLine(allocator: std.mem.Allocator, comptime prompt_len: usize, prompt
              
             // if you've already reached the start of the console line, then go
             // to the above one (line wrapping)
-            if (cursor % (winsize.ws_col-prompt_len) == 0) {
+            if (cursor % coloumns == 0) {
                 try std.fmt.format(stdout, "\x1B[1A\x1B[{}G", .{winsize.ws_col}); // go to end of line
                 free_lines += 1;
             } else {
@@ -209,7 +235,7 @@ pub fn readLine(allocator: std.mem.Allocator, comptime prompt_len: usize, prompt
             cursor -= 1;
             _ = line.orderedRemove(cursor);
             // you want to print the state of the lines *after* deletion, not before
-            try wrapLine(line.items, cursor+1, winsize.ws_col - prompt_len, &free_lines, wrap_prompt, stdout);
+            try wrapLine(line.items, cursor+1, coloumns, &free_lines, wrap_prompt, stdout);
 
             continue;
         }
@@ -224,9 +250,9 @@ pub fn readLine(allocator: std.mem.Allocator, comptime prompt_len: usize, prompt
         // print changes to terminal
         cursor += 1;
 
-        try wrapLine(line.items, cursor, winsize.ws_col - prompt_len, &free_lines, wrap_prompt, stdout);
+        try wrapLine(line.items, cursor, coloumns, &free_lines, wrap_prompt, stdout);
         // if you reach the end of the line then go to the next one (line wrapping)
-        if ((cursor-1) % (winsize.ws_col-prompt_len) == winsize.ws_col-prompt_len-1) {
+        if ((cursor-1) % coloumns == coloumns-1) {
             try stdout.writeAll("\x1B[1B"); // go one down
             try std.fmt.format(stdout, "\x1B[{}G", .{prompt_len+1}); // skip the prompt
             free_lines -= 1;
