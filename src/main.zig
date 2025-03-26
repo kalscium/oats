@@ -391,14 +391,14 @@ fn printHelp() void {
         \\Commands:
         \\    session       | starts an interactive session that pushes thoughts/notes to the stack from stdin
         \\    push <text>   | push a singular thought/note to the stack
-    	\\    pop  <n>      | pops <n> (defaults to 1) items off the stack (removes it)
-        \\    tail <n>      | prints the last <n> stack items (thoughts/notes)
-        \\    head <n>      | prints the first <n> stack items (thoughts/notes)
+        \\    pop  <n>      | pops <n> (defaults to 1) items off the stack (removes it)
+        \\    tail <n>      | prints the last <n> (defaults to 1) stack items (thoughts/notes)
+        \\    head <n>      | prints the first <n> (defaults to 1) stack items (thoughts/notes)
         \\    count         | counts the amount of items on the stack and prints it to stdout
-        \\    print         | prints all the contents of the items on the stack to stdout
+        // \\    sort          | sorts the contents of the oats database based on id
         \\    markdown      | pretty-prints the items on the stack in the markdown format
         \\    raw           | writes the raw contents of the database to stdout (pipe to a file for backups)
-        \\    import        | reads the raw contents of a database (backup) from stdin and combines it with the current database
+        // \\    import        | reads the raw contents of a database (backup) from stdin and combines it with the current database
         \\    wipe          | wipes all the contents of the stack and creates a new one
         \\Options:
         \\    -h, --help    | prints this help message

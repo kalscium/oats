@@ -123,7 +123,8 @@ pub fn readLine(allocator: std.mem.Allocator, comptime prompt_len: usize, prompt
         // check for CTRL+C (clear)
         if (char == 3) {
             line.deinit();
-            return @TypeOf(line).init(allocator);
+            line = @TypeOf(line).init(allocator);
+            break;
         }
 
         // check for escape codes
@@ -279,9 +280,10 @@ pub fn session(allocator: std.mem.Allocator, file: std.fs.File) !void {
         \\<<< OATS SESSION >>>
         \\* welcome to a space for random thughts or notes!
         \\* some quick controls:
-        \\  * CTRL+D, CTRL+C or :exit to exit the thought session
-        \\  * :pop to pop the last stack item
-        \\  * :clear to clear the screen
+        \\  * CTRL+D or :exit to exit the thought session
+        \\  * CTRL+C to cancel the line
+        // \\  * :pop to pop the last stack item
+        // \\  * :clear to clear the screen
         \\
         , .{}
     );
@@ -298,6 +300,9 @@ pub fn session(allocator: std.mem.Allocator, file: std.fs.File) !void {
 
         // skip empty lines
         if (line.items.len == 0) continue;
+
+        // if :exit exit
+        if (std.mem.eql(u8, line.items, ":exit")) return error.UserInterrupt;
 
         // pack the read line
         const timestamp = std.time.milliTimestamp();
