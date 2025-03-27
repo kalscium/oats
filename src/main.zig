@@ -379,6 +379,58 @@ pub fn main() !void {
         return;
     }
 
+    // check for the 'markdown' command
+    if (std.mem.eql(u8, args[1], "markdown")) {
+        // if database file doesn't exist throw error
+        const path = try oats.getHome(allocator);
+        if (std.fs.accessAbsolute(path, .{})) {}
+        else |err| {
+            std.debug.print("info: no oats database found, try running 'oats wipe' to initialize a new one\n", .{});
+            return err;
+        }
+
+        // open the read database file
+        defer allocator.free(path);
+        var file = try std.fs.openFileAbsolute(path, .{ .mode = .read_write });
+        defer file.close();
+
+        // double-check the magic sequence
+        var magic: [oats.magic_seq.len]u8 = undefined;
+        _ = try file.readAll(&magic);
+        if (!std.mem.eql(u8, &magic, oats.magic_seq)) return error.MagicMismatch;
+
+        // make sure it's of the right major version
+        const maj_ver = try file.reader().readInt(u8, .big);
+        if (maj_ver != oats.maj_ver) return error.MajVersionMismatch;
+
+        // get the stack ptr and create the read ptr
+        const stack_ptr = try file.reader().readInt(u64, .big);
+        var read_ptr: u64 = oats.stack.stack_start_loc;
+
+        // get the timezone, otherwise default to new-york
+        const tz_offset = if (args.len > 2) try std.fmt.parseInt(i16, args[2], 10)*60 else oats.datetime.datetime.timezones.America.New_York.offset;
+
+        try std.io.getStdOut().writeAll("# Oats (Thoughts & Notes)\n---\n");
+
+        // iterate through the items, format them and print them
+        var prev_features = oats.item.Features{ .timestamp = null };
+        var buffered = std.io.bufferedWriter(std.io.getStdOut().writer());
+        defer buffered.flush() catch {};
+        while (read_ptr != stack_ptr) {
+            // read the next item and decode it
+            const raw_item = try oats.stack.readStackEntry(allocator, file, &read_ptr);
+            defer allocator.free(raw_item);
+            const item = oats.item.unpack(raw_item);
+
+            // write to stdout
+            try oats.format.markdown(buffered.writer(), tz_offset, item.features, item.contents, prev_features);
+
+            prev_features = item.features;
+        }
+
+        return;
+    }
+
     // only occurs when there is an invalid command
     printHelp();
     return error.CommandNotFound;
@@ -396,7 +448,7 @@ fn printHelp() void {
         \\    head <n>      | prints the first <n> (defaults to 1) stack items (thoughts/notes)
         \\    count         | counts the amount of items on the stack and prints it to stdout
         // \\    sort          | sorts the contents of the oats database based on id
-        \\    markdown      | pretty-prints the items on the stack in the markdown format
+        \\    markdown <tz> | pretty-prints the items on the stack in the markdown format, provided with a timezone offset (defaults to new york)
         \\    raw           | writes the raw contents of the database to stdout (pipe to a file for backups)
         // \\    import        | reads the raw contents of a database (backup) from stdin and combines it with the current database
         \\    wipe          | wipes all the contents of the stack and creates a new one

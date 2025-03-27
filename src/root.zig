@@ -1,6 +1,7 @@
 pub const stack = @import("stack.zig");
 pub const item = @import("item.zig");
 pub const format = @import("format.zig");
+pub const datetime = @import("datetime");
 
 const std = @import("std");
 
