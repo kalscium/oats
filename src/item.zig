@@ -26,6 +26,15 @@ pub fn featuresSize(features: Features) usize {
     return size;
 }
 
+/// Checks if a raw item's id is larger than another item's id
+pub fn rawItemIdLessThan(_: void, lhs: []const u8, rhs: []const u8) bool {
+    // unpack them
+    const unpacked_lhs = unpack(lhs);
+    const unpacked_rhs = unpack(rhs);
+
+    return unpacked_lhs.id < unpacked_rhs.id;
+}
+
 /// Packs together contents with the feature bitfield and returns it, owned by the caller
 pub fn pack(allocator: std.mem.Allocator, id: u64, features: Features, contents: []const u8) ![]const u8 {
     const total_size = @sizeOf(@TypeOf(id)) + featuresSize(features) + contents.len;

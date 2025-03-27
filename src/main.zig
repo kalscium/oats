@@ -288,6 +288,155 @@ pub fn main() !void {
         return;
     }
 
+    // checks for the 'sort' command
+    if (std.mem.eql(u8, args[1], "sort")) {
+        // if database file doesn't exist throw error
+        const path = try oats.getHome(allocator);
+        if (std.fs.accessAbsolute(path, .{})) {}
+        else |err| {
+            std.debug.print("info: no oats database found, try running 'oats wipe' to initialize a new one\n", .{});
+            return err;
+        }
+
+        // open the database file
+        defer allocator.free(path);
+        var file = try std.fs.openFileAbsolute(path, .{ .mode = .read_write });
+        defer file.close();
+
+        // double-check the magic sequence
+        var magic: [oats.magic_seq.len]u8 = undefined;
+        _ = try file.readAll(&magic);
+        if (!std.mem.eql(u8, &magic, oats.magic_seq)) return error.MagicMismatch;
+
+        // make sure it's of the right major version
+        const maj_ver = try file.reader().readInt(u8, .big);
+        if (maj_ver != oats.maj_ver) return error.MajVersionMismatch;
+
+        // get the stack ptr
+        try file.seekTo(oats.stack.stack_ptr_loc);
+        var stack_ptr = try file.reader().readInt(u64, .big);
+
+        // read ptr instead of stack ptr (read from start)
+        var read_ptr: u64 = oats.stack.stack_start_loc;
+
+        // store it into an arraylist
+        var items = std.ArrayList([]const u8).init(allocator);
+        defer items.deinit();
+        defer for (items.items) |item| allocator.free(item);
+        while (read_ptr != stack_ptr) {
+            // read the next item and decode it
+            const raw_item = try oats.stack.readStackEntry(allocator, file, &read_ptr);
+            try items.append(raw_item);
+        }
+
+        // sort the items
+        std.mem.sortUnstable(std.meta.Elem(@TypeOf(items.items)), items.items, {}, oats.item.rawItemIdLessThan);
+
+        // write them back to the file
+        stack_ptr = oats.stack.stack_start_loc; // set stack pointer to stack start to 'wipe' everything
+        for (items.items) |item|
+            try oats.stack.push(file, &stack_ptr, item);
+
+        return;
+    }
+
+    // checks for the 'import' command
+    if (std.mem.eql(u8, args[1], "import")) {
+        // check for the arg
+        if (args.len < 3) {
+            printHelp();
+            return error.ExpectedArgument;
+        }
+
+        // if database file doesn't exist throw error
+        const path = try oats.getHome(allocator);
+        if (std.fs.accessAbsolute(path, .{})) {}
+        else |err| {
+            std.debug.print("info: no oats database found, try running 'oats wipe' to initialize a new one\n", .{});
+            return err;
+        }
+
+        // open the current database file
+        defer allocator.free(path);
+        var file = try std.fs.openFileAbsolute(path, .{ .mode = .read_write });
+        defer file.close();
+
+        // double-check the magic sequence
+        var magic: [oats.magic_seq.len]u8 = undefined;
+        _ = try file.readAll(&magic);
+        if (!std.mem.eql(u8, &magic, oats.magic_seq)) return error.MagicMismatch;
+
+        // make sure it's of the right major version
+        const maj_ver = try file.reader().readInt(u8, .big);
+        if (maj_ver != oats.maj_ver) return error.MajVersionMismatch;
+
+        // get the stack ptr
+        try file.seekTo(oats.stack.stack_ptr_loc);
+        var stack_ptr = try file.reader().readInt(u64, .big);
+
+        // read ptr instead of stack ptr (read from start)
+        var read_ptr: u64 = oats.stack.stack_start_loc;
+
+        // store it into a hashmap
+        var items = std.hash_map.AutoHashMap(u64, []const u8).init(allocator);
+        defer items.deinit();
+        defer {
+            var iter = items.valueIterator();
+            while (iter.next()) |item| allocator.free(item.*);
+        }
+        while (read_ptr != stack_ptr) {
+            // read the next item and decode it
+            const raw_item = try oats.stack.readStackEntry(allocator, file, &read_ptr);
+            const id = oats.item.unpack(raw_item).id;
+            try items.put(id, raw_item);
+        }
+
+        // read the contents of the database to import
+
+        // if database file doesn't exist throw error
+        var ifile = std.fs.cwd().openFile(args[2], .{}) catch |err| {
+            std.debug.print("info: error while importing database\n", .{});
+            return err;
+        };
+
+        // double-check the magic sequence
+        _ = try ifile.readAll(&magic);
+        if (!std.mem.eql(u8, &magic, oats.magic_seq)) return error.MagicMismatch;
+
+        // make sure it's of the right major version
+        const imaj_ver = try ifile.reader().readInt(u8, .big);
+        if (imaj_ver != oats.maj_ver) return error.MajVersionMismatch;
+
+        // get the stack ptr
+        try ifile.seekTo(oats.stack.stack_ptr_loc);
+        const istack_ptr = try ifile.reader().readInt(u64, .big);
+
+        // read ptr instead of stack ptr (read from start)
+        read_ptr = oats.stack.stack_start_loc;
+
+        // store imported items into a hashmap
+        while (read_ptr != istack_ptr) {
+            // read the next item and decode it
+            const raw_item = try oats.stack.readStackEntry(allocator, ifile, &read_ptr);
+            const id = oats.item.unpack(raw_item).id;
+            try items.put(id, raw_item);
+        }
+
+        // write them back to the file
+        stack_ptr = oats.stack.stack_start_loc; // set stack pointer to stack start to 'wipe' everything
+        var iter = items.valueIterator();
+        while (iter.next()) |item|
+            try oats.stack.push(file, &stack_ptr, item.*);
+
+        // write stack pointer to database
+        try file.seekTo(oats.stack.stack_ptr_loc);
+        try file.writer().writeInt(u64, stack_ptr, .big);
+
+        std.debug.print("note: after importing the stack items will be out of order, run `oats sort` to sort them.\n", .{});
+
+        return;
+    }
+
     // checks for the 'count' command
     if (std.mem.eql(u8, args[1], "count")) {
         // if database file doesn't exist throw error
@@ -447,10 +596,10 @@ fn printHelp() void {
         \\    tail <n>      | prints the last <n> (defaults to 1) stack items (thoughts/notes)
         \\    head <n>      | prints the first <n> (defaults to 1) stack items (thoughts/notes)
         \\    count         | counts the amount of items on the stack and prints it to stdout
-        // \\    sort          | sorts the contents of the oats database based on id
+        \\    sort          | sorts the contents of the oats database based on id
         \\    markdown <tz> | pretty-prints the items on the stack in the markdown format, provided with a timezone offset (defaults to new york)
         \\    raw           | writes the raw contents of the database to stdout (pipe to a file for backups)
-        // \\    import        | reads the raw contents of a database (backup) from stdin and combines it with the current database
+    	\\    import <path> | reads the raw contents of a database (backup) from the path provided and combines it with the current database
         \\    wipe          | wipes all the contents of the stack and creates a new one
         \\Options:
         \\    -h, --help    | prints this help message
