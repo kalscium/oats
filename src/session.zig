@@ -10,6 +10,49 @@ const termios = @cImport({
     @cInclude("unistd.h");
 });
 const ioctl = @cImport(@cInclude("sys/ioctl.h"));
+const main = @import("main.zig");
+
+const help = 
+    \\{s}<<< {s}OATS SESSION {s}>>>{s}
+    \\{s}*{s} welcome to a space for random thughts or notes!
+    \\{s}*{s} some quick controls:
+    \\  {s}*{s} CTRL+D or {s}:{s}exit to exit the thought session
+    \\  {s}*{s} CTRL+C to cancel the line
+    \\  {s}*{s} `{s}:{s}help` to print this help message
+    \\  {s}*{s} `{s}:{s}pop <n>` to pop the last <n> stack items
+    \\  {s}*{s} `{s}:{s}clear` to clear the screen
+    \\
+;
+fn printHelp() void {
+    std.debug.print(help, .{
+        "\x1b[35m",
+        "\x1b[0;1m",
+        "\x1b[35m",
+        "\x1b[0m",
+        "\x1b[35m",
+        "\x1b[0m",
+        "\x1b[35m",
+        "\x1b[0m",
+        "\x1b[35m",
+        "\x1b[0m",
+        "\x1b[36m",
+        "\x1b[0m",
+        "\x1b[35m",
+        "\x1b[0m",
+        "\x1b[35m",
+        "\x1b[0m",
+        "\x1b[36m",
+        "\x1b[0m",
+        "\x1b[35m",
+        "\x1b[0m",
+        "\x1b[36m",
+        "\x1b[0m",
+        "\x1b[35m",
+        "\x1b[0m",
+        "\x1b[36m",
+        "\x1b[0m",
+    });
+}
 
 /// Enables the terminal raw mode and also returns the original mode so you can switch back
 pub fn enableRawMode() termios.struct_termios {
@@ -115,6 +158,9 @@ pub fn readLine(allocator: std.mem.Allocator, comptime prompt_len: usize, prompt
     // keep track of free lines to write to
     var free_lines: usize = 0;
 
+    // if a command was run
+    var command_run = false;
+
     // keep reading until EOF or new-line
     while (std.io.getStdIn().reader().readByte()) |char| {
         // check for CTRL+D (exit)
@@ -137,6 +183,15 @@ pub fn readLine(allocator: std.mem.Allocator, comptime prompt_len: usize, prompt
         if (escape and char == 91) {
             escape_arrow = true;
             continue;
+        }
+
+        // check for `:` (commands)
+        if (char == ':' and cursor == 0) {
+            command_run = true;
+            line.deinit();
+            line = @TypeOf(line).init(allocator);
+            try readCommand(allocator);
+            break;
         }
 
         // check for left arrow
@@ -269,24 +324,141 @@ pub fn readLine(allocator: std.mem.Allocator, comptime prompt_len: usize, prompt
     const cleanup_jump = free_lines + line.items.len / coloumns - cursor / coloumns;
     if (cleanup_jump != 0)
         try std.fmt.format(stdout, "\x1B[{}B", .{cleanup_jump});
-    try std.fmt.format(stdout, "\x1B[{}G\n", .{prompt_len});
+    if (!command_run)
+        try std.fmt.format(stdout, "\x1B[{}G\n", .{prompt_len});
 
     return line;
 }
 
+/// Reads a line as a command from stdin with the specified prompt in raw mode and executes it
+pub fn readCommand(allocator: std.mem.Allocator) !void {
+    const prompt_len = 6;
+    const prompt = "\x1b[2K\x1b[0G    \x1b[36;1m: \x1b[0m";
+    const wrap_prompt = "\x1b[30;1m  ... \x1b[0m";
+
+    var line = std.ArrayList(u8).init(allocator);
+    defer line.deinit();
+
+    var cursor: usize = line.items.len; // index into the line
+    var stdout = std.io.getStdOut().writer();
+
+    try stdout.writeAll(prompt);
+
+    // get window size
+    var winsize: ioctl.winsize = undefined;
+    _ = ioctl.ioctl(termios.STDOUT_FILENO, ioctl.TIOCGWINSZ, &winsize);
+
+    const coloumns = @as(usize, winsize.ws_col) - prompt_len;
+
+    // keep track of free lines to write to
+    var free_lines: usize = 0;
+
+    // keep reading until EOF or new-line
+    while (std.io.getStdIn().reader().readByte()) |char| {
+        // check for CTRL+D (exit)
+        if (char == 4) return error.UserInterrupt;
+
+        // check for CTRL+C (clear)
+        if (char == 3) {
+            line.deinit();
+            line = @TypeOf(line).init(allocator);
+            break;
+        }
+
+        // check for ESC
+        if (char == 27) {
+            line.deinit();
+            line = @TypeOf(line).init(allocator);
+            break;
+        }
+
+        // check for backspace
+        if (char == 127) {
+            // if cursor is zero, then break
+            if (cursor == 0) break;
+
+            // print changes to terminal
+             
+            // if you've already reached the start of the console line, then go
+            // to the above one (line wrapping)
+            if (cursor % coloumns == 0) {
+                try std.fmt.format(stdout, "\x1B[1A\x1B[{}G", .{winsize.ws_col}); // go to end of line
+                free_lines += 1;
+            } else {
+                try stdout.writeAll(&.{ 27, 91, 68 }); // otherwise just go left
+            }
+            cursor -= 1;
+            // write a space to overwrite the deleted character if the cursor is at zero
+            if (cursor == 0)
+                try stdout.writeAll(" \x1B[1D");
+            _ = line.orderedRemove(cursor);
+            // you want to print the state of the lines *after* deletion, not before
+            try wrapLine(line.items, cursor+1, coloumns, &free_lines, wrap_prompt, stdout);
+
+            continue;
+        }
+
+        // check for enter (newline)
+        if (char == '\n') break;
+
+        // otherwise treat it like a normal character
+
+        try line.insert(cursor, char);
+
+        // print changes to terminal
+        cursor += 1;
+
+        try wrapLine(line.items, cursor, coloumns, &free_lines, wrap_prompt, stdout);
+        // if you reach the end of the line then go to the next one (line wrapping)
+        if ((cursor-1) % coloumns == coloumns-1) {
+            try stdout.writeAll("\x1B[1B"); // go one down
+            try std.fmt.format(stdout, "\x1B[{}G", .{prompt_len+1}); // skip the prompt
+            free_lines -= 1;
+        } else {
+            try stdout.writeAll(&.{ 27, 91, 67 });
+        }
+    } else |_| {}
+
+    // slight cleanup beforehand
+    try stdout.writeAll("\x1B[0G\x1B[2K"); // wipe line and go to start of line
+
+    // check for no command
+    if (line.items.len == 0) return;
+
+    var split = std.mem.splitScalar(u8, line.items, ' ');
+    const split_first = split.first();
+
+    // check for the 'exit' command
+    if (std.mem.eql(u8, split_first, "exit"))
+        return error.UserInterrupt;
+
+    // check for the 'help' command
+    if (std.mem.eql(u8, split_first, "help"))
+        return printHelp();
+
+    // check for the 'clear' command
+    if (std.mem.eql(u8, split_first, "clear")) {
+        try stdout.writeAll("\x1B[H\x1B[2J");
+        return;
+    }
+
+    // check for the 'pop' command
+    if (std.mem.eql(u8, split_first, "pop")) {
+        const to_pop = if (split.next()) |raw_to_pop|
+            try std.fmt.parseInt(usize, raw_to_pop, 10)
+        else 1;
+        try main.pop(allocator, to_pop);
+        return;
+    }
+
+    // otherwise the command is invalid
+    std.debug.print("error: unknown command '{s}'\n", .{split_first});
+    return;
+}
+
 /// Starts the interactive oats session
 pub fn session(allocator: std.mem.Allocator, file: std.fs.File) !void {
-    std.debug.print(
-        \\<<< OATS SESSION >>>
-        \\* welcome to a space for random thughts or notes!
-        \\* some quick controls:
-        \\  * CTRL+D or :exit to exit the thought session
-        \\  * CTRL+C to cancel the line
-        // \\  * :pop to pop the last stack item
-        // \\  * :clear to clear the screen
-        \\
-        , .{}
-    );
+    printHelp();
 
     // enter raw mode, & enter cooked mode again upon exit
     const orig_termios = enableRawMode();
@@ -300,9 +472,6 @@ pub fn session(allocator: std.mem.Allocator, file: std.fs.File) !void {
 
         // skip empty lines
         if (line.items.len == 0) continue;
-
-        // if :exit exit
-        if (std.mem.eql(u8, line.items, ":exit")) return error.UserInterrupt;
 
         // pack the read line
         const timestamp = std.time.milliTimestamp();

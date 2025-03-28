@@ -3,6 +3,53 @@ pub const session = @import("session.zig");
 const std = @import("std");
 const oats = @import("oats");
 
+pub fn pop(allocator: std.mem.Allocator, to_pop: usize) !void {
+    // if database file doesn't exist throw error
+    const path = try oats.getHome(allocator);
+    if (std.fs.accessAbsolute(path, .{})) {}
+    else |err| {
+        std.debug.print("info: no oats database found, try running 'oats wipe' to initialize a new one\n", .{});
+        return err;
+    }
+
+    // open the database file
+    defer allocator.free(path);
+    var file = try std.fs.openFileAbsolute(path, .{ .mode = .read_write });
+    defer file.close();
+
+    // double-check the magic sequence
+    var magic: [oats.magic_seq.len]u8 = undefined;
+    _ = try file.readAll(&magic);
+    if (!std.mem.eql(u8, &magic, oats.magic_seq)) return error.MagicMismatch;
+
+    // make sure it's of the right major version
+    const maj_ver = try file.reader().readInt(u8, .big);
+    if (maj_ver != oats.maj_ver) return error.MajVersionMismatch;
+
+    // get the stack ptr
+    var stack_ptr = try file.reader().readInt(u64, .big);
+
+    // print it
+    std.debug.print("<<< POPPED OATS (LATEST FIRST) >>>\n", .{});
+    for (0..to_pop) |_| {
+        // double check there are items to pop
+        if (stack_ptr == oats.stack.stack_start_loc)
+            return error.EmptyStack;
+
+        // pop the last item and decode it
+        const raw_item = try oats.stack.pop(allocator, file, &stack_ptr);
+        defer allocator.free(raw_item);
+        const item = oats.item.unpack(raw_item);
+
+        try oats.format.normalFeatures(allocator, std.io.getStdErr(), item.id, item.features);
+        try std.fmt.format(std.io.getStdOut().writer(), "{s}\n", .{item.contents});
+    }
+
+    // update the stack ptr
+    try file.seekTo(oats.stack.stack_ptr_loc);
+    try file.writer().writeInt(u64, stack_ptr, .big);
+}
+
 pub fn main() !void {
     // initialize the allocator
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
@@ -133,54 +180,9 @@ pub fn main() !void {
 
     // checks for the 'pop' command
     if (std.mem.eql(u8, args[1], "pop")) {
-        // if database file doesn't exist throw error
-        const path = try oats.getHome(allocator);
-        if (std.fs.accessAbsolute(path, .{})) {}
-        else |err| {
-            std.debug.print("info: no oats database found, try running 'oats wipe' to initialize a new one\n", .{});
-            return err;
-        }
-
-        // open the database file
-        defer allocator.free(path);
-        var file = try std.fs.openFileAbsolute(path, .{ .mode = .read_write });
-        defer file.close();
-
-        // double-check the magic sequence
-        var magic: [oats.magic_seq.len]u8 = undefined;
-        _ = try file.readAll(&magic);
-        if (!std.mem.eql(u8, &magic, oats.magic_seq)) return error.MagicMismatch;
-
-        // make sure it's of the right major version
-        const maj_ver = try file.reader().readInt(u8, .big);
-        if (maj_ver != oats.maj_ver) return error.MajVersionMismatch;
-
-        // get the stack ptr
-        var stack_ptr = try file.reader().readInt(u64, .big);
-
         // parse the arg as int
         const to_pop = if (args.len > 2) try std.fmt.parseInt(usize, args[2], 10) else 1;
-
-        // print it
-        std.debug.print("<<< POPPED OATS (LATEST FIRST) >>>\n", .{});
-        for (0..to_pop) |_| {
-            // double check there are items to pop
-            if (stack_ptr == oats.stack.stack_start_loc)
-                return error.EmptyStack;
-
-            // pop the last item and decode it
-            const raw_item = try oats.stack.pop(allocator, file, &stack_ptr);
-            defer allocator.free(raw_item);
-            const item = oats.item.unpack(raw_item);
-
-            try oats.format.normalFeatures(allocator, std.io.getStdErr(), item.id, item.features);
-            try std.fmt.format(std.io.getStdOut().writer(), "{s}\n", .{item.contents});
-        }
-
-        // update the stack ptr
-        try file.seekTo(oats.stack.stack_ptr_loc);
-        try file.writer().writeInt(u64, stack_ptr, .big);
-        return;
+        return pop(allocator, to_pop);
     }
 
     // checks for the 'tail' command

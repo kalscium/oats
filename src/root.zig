@@ -6,7 +6,7 @@ pub const datetime = @import("datetime");
 const std = @import("std");
 
 /// The current semantic version
-pub const version = "0.2.0";
+pub const version = "0.3.0";
 
 /// The current major version of this cli (semantic versioning)
 pub const maj_ver = blk: {
