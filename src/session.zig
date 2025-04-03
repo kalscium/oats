@@ -19,6 +19,7 @@ const help =
     \\  {s}*{s} CTRL+D or {s}:{s}exit to exit the thought session
     \\  {s}*{s} CTRL+C to cancel the line
     \\  {s}*{s} `{s}:{s}help` to print this help message
+    \\  {s}*{s} `{s}:{s}tail <n>` to print the last <n> stack items
     \\  {s}*{s} `{s}:{s}pop <n>` to pop the last <n> stack items
     \\  {s}*{s} `{s}:{s}clear` to clear the screen
     \\
@@ -38,6 +39,10 @@ fn printHelp() void {
         "\x1b[36m",
         "\x1b[0m",
         "\x1b[35m",
+        "\x1b[0m",
+        "\x1b[35m",
+        "\x1b[0m",
+        "\x1b[36m",
         "\x1b[0m",
         "\x1b[35m",
         "\x1b[0m",
@@ -448,6 +453,15 @@ pub fn readCommand(allocator: std.mem.Allocator) !void {
             try std.fmt.parseInt(usize, raw_to_pop, 10)
         else 1;
         try main.pop(allocator, to_pop);
+        return;
+    }
+
+    // check for the 'tail' command
+    if (std.mem.eql(u8, split_first, "tail")) {
+        const to_pop = if (split.next()) |raw_to_pop|
+            try std.fmt.parseInt(usize, raw_to_pop, 10)
+        else 1;
+        try main.tail(allocator, to_pop);
         return;
     }
 
