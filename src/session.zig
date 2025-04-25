@@ -12,52 +12,7 @@ const termios = @cImport({
 const ioctl = @cImport(@cInclude("sys/ioctl.h"));
 const main = @import("main.zig");
 
-const help = 
-    \\{s}<<< {s}OATS SESSION {s}>>>{s}
-    \\{s}*{s} welcome to a space for random thughts or notes!
-    \\{s}*{s} some quick controls:
-    \\  {s}*{s} CTRL+D or {s}:{s}exit to exit the thought session
-    \\  {s}*{s} CTRL+C to cancel the line
-    \\  {s}*{s} `{s}:{s}help` to print this help message
-    \\  {s}*{s} `{s}:{s}tail <n>` to print the last <n> stack items
-    \\  {s}*{s} `{s}:{s}pop <n>` to pop the last <n> stack items
-    \\  {s}*{s} `{s}:{s}clear` to clear the screen
-    \\
-;
-fn printHelp() void {
-    std.debug.print(help, .{
-        "\x1b[35m",
-        "\x1b[0;1m",
-        "\x1b[35m",
-        "\x1b[0m",
-        "\x1b[35m",
-        "\x1b[0m",
-        "\x1b[35m",
-        "\x1b[0m",
-        "\x1b[35m",
-        "\x1b[0m",
-        "\x1b[36m",
-        "\x1b[0m",
-        "\x1b[35m",
-        "\x1b[0m",
-        "\x1b[35m",
-        "\x1b[0m",
-        "\x1b[36m",
-        "\x1b[0m",
-        "\x1b[35m",
-        "\x1b[0m",
-        "\x1b[36m",
-        "\x1b[0m",
-        "\x1b[35m",
-        "\x1b[0m",
-        "\x1b[36m",
-        "\x1b[0m",
-        "\x1b[35m",
-        "\x1b[0m",
-        "\x1b[36m",
-        "\x1b[0m",
-    });
-}
+const help = "\n\x1b[35m<<< \x1b[0;1mOATS SESSION \x1b[35m>>>\x1b[0m\n\x1b[35m*\x1b[0m welcome to a space for random thughts or notes!\n\x1b[35m*\x1b[0m some quick controls:\n  \x1b[35m*\x1b[0m CTRL+D or \x1b[36m:\x1b[0mexit to exit the thought session\n  \x1b[35m*\x1b[0m CTRL+C to cancel the line\n  \x1b[35m*\x1b[0m `\x1b[36m:\x1b[0mhelp` to print this help message\n  \x1b[35m*\x1b[0m `\x1b[36m:\x1b[0mtail <n>` to print the last <n> stack items\n  \x1b[35m*\x1b[0m `\x1b[36m:\x1b[0mpop <n>` to pop the last <n> stack items\n  \x1b[35m*\x1b[0m `\x1b[36m:\x1b[0mclear` to clear the screen\n";
 
 /// Enables the terminal raw mode and also returns the original mode so you can switch back
 pub fn enableRawMode() termios.struct_termios {
@@ -439,7 +394,7 @@ pub fn readCommand(allocator: std.mem.Allocator) !void {
 
     // check for the 'help' command
     if (std.mem.eql(u8, split_first, "help"))
-        return printHelp();
+        return std.debug.print(help, .{});
 
     // check for the 'clear' command
     if (std.mem.eql(u8, split_first, "clear")) {
@@ -472,7 +427,7 @@ pub fn readCommand(allocator: std.mem.Allocator) !void {
 
 /// Starts the interactive oats session
 pub fn session(allocator: std.mem.Allocator, file: std.fs.File) !void {
-    printHelp();
+    std.debug.print(help, .{});
 
     // enter raw mode, & enter cooked mode again upon exit
     const orig_termios = enableRawMode();

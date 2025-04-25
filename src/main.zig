@@ -3,6 +3,39 @@ pub const session = @import("session.zig");
 const std = @import("std");
 const oats = @import("oats");
 
+/// Finds the location of an item in a slice, returns null if not present
+pub fn binarySearch(item: anytype, slice: []const @TypeOf(item)) ?usize {
+    var low: usize = 0;
+    var high: usize = slice.len - 1;
+
+    while (low <= high) {
+        const mid = low + (high - low) / 2;
+
+        // check if x is present at mid
+        if (slice[mid] == item)
+            return mid;
+
+        // if x greater, ignore left half
+        if (slice[mid] < item)
+            low = mid + 1
+        // if x lesser, ignore right half
+        else
+            high = mid - 1;
+    }
+
+    // if this is reached, then item is not present
+    return null;
+}
+
+pub fn basicLessThan(comptime T: type) fn (context: void, a: T, b: T)bool {
+    return struct{
+        pub fn call(context: void, a: T, b: T) bool {
+            _ = context;
+            return a < b;
+        }
+    }.call;
+}
+
 pub fn pop(allocator: std.mem.Allocator, to_pop: usize) !void {
     // if database file doesn't exist throw error
     const path = try oats.getHome(allocator);
@@ -39,10 +72,16 @@ pub fn pop(allocator: std.mem.Allocator, to_pop: usize) !void {
         // pop the last item and decode it
         const raw_item = try oats.stack.pop(allocator, file, &stack_ptr);
         defer allocator.free(raw_item);
-        const item = oats.item.unpack(raw_item);
+        const item = oats.item.unpack(stack_ptr + @sizeOf(u32), raw_item);
+
+        // read it's contents
+        const contents = try allocator.alloc(u8, item.size - item.contents_offset);
+        defer allocator.free(contents);
+        try file.seekTo(item.start_idx + item.contents_offset);
+        _ = try file.readAll(contents);
 
         try oats.format.normalFeatures(allocator, std.io.getStdErr(), item.id, item.features);
-        try std.fmt.format(std.io.getStdOut().writer(), "{s}\n", .{item.contents});
+        try std.fmt.format(std.io.getStdOut().writer(), "{s}\n", .{contents});
     }
 
     // update the stack ptr
@@ -86,10 +125,16 @@ pub fn tail(allocator: std.mem.Allocator, to_pop: usize) !void {
         // pop the last item and decode it
         const raw_item = try oats.stack.pop(allocator, file, &stack_ptr);
         defer allocator.free(raw_item);
-        const item = oats.item.unpack(raw_item);
+        const item = oats.item.unpack(stack_ptr + @sizeOf(u32), raw_item);
+
+        // read it's contents
+        const contents = try allocator.alloc(u8, item.size - item.contents_offset);
+        defer allocator.free(contents);
+        try file.seekTo(item.start_idx + item.contents_offset);
+        _ = try file.readAll(contents);
 
         try oats.format.normalFeatures(allocator, std.io.getStdErr(), item.id, item.features);
-        try std.fmt.format(std.io.getStdOut().writer(), "{s}\n", .{item.contents});
+        try std.fmt.format(std.io.getStdOut().writer(), "{s}\n", .{contents});
     }
 
     // note how the stack pointer isn't written, so the 'pops' are
@@ -282,12 +327,19 @@ pub fn main() !void {
                 return error.EmptyStack;
 
             // read the next item and decode it
+            const start_idx = read_ptr + @sizeOf(u32);
             const raw_item = try oats.stack.readStackEntry(allocator, file, &read_ptr);
             defer allocator.free(raw_item);
-            const item = oats.item.unpack(raw_item);
+            const item = oats.item.unpack(start_idx, raw_item);
+
+            // read the contents
+            const contents = try allocator.alloc(u8, item.size - item.contents_offset);
+            defer allocator.free(contents);
+            try file.seekTo(item.start_idx + item.contents_offset);
+            _ = try file.readAll(contents);
 
             try oats.format.normalFeatures(allocator, std.io.getStdErr(), item.id, item.features);
-            try std.fmt.format(std.io.getStdOut().writer(), "{s}\n", .{item.contents});
+            try std.fmt.format(std.io.getStdOut().writer(), "{s}\n", .{contents});
         }
 
         return;
@@ -324,23 +376,53 @@ pub fn main() !void {
         // read ptr instead of stack ptr (read from start)
         var read_ptr: u64 = oats.stack.stack_start_loc;
 
-        // store it into an arraylist
-        var items = std.ArrayList([]const u8).init(allocator);
+        // store the metadata of all the stack items in an arraylist
+        var items = std.ArrayList(oats.item.Metadata).init(allocator);
         defer items.deinit();
-        defer for (items.items) |item| allocator.free(item);
         while (read_ptr != stack_ptr) {
             // read the next item and decode it
+            const start_idx = read_ptr + @sizeOf(u32);
             const raw_item = try oats.stack.readStackEntry(allocator, file, &read_ptr);
-            try items.append(raw_item);
+            defer allocator.free(raw_item);
+            const item = oats.item.unpack(start_idx, raw_item);
+            try items.append(item);
         }
 
         // sort the items
-        std.mem.sortUnstable(std.meta.Elem(@TypeOf(items.items)), items.items, {}, oats.item.rawItemIdLessThan);
+        std.mem.sortUnstable(std.meta.Elem(@TypeOf(items.items)), items.items, {}, oats.item.Metadata.idLessThan);
 
-        // write them back to the file
+        // create a new temporary database file
+        const tmp_path = try oats.getTmpHome(allocator);
+        defer allocator.free(tmp_path);
+        var tmp_file = try std.fs.createFileAbsolute(tmp_path, .{});
+        defer tmp_file.close();
+
+        // write the boilerplate to the tmp
+        
+        // write the magic sequence
+        try tmp_file.writeAll(oats.magic_seq);
+
+        // write the major version and stack ptr
+        try tmp_file.writer().writeInt(u8, oats.maj_ver, .big);
+        try tmp_file.writer().writeInt(u64, oats.stack.stack_start_loc, .big);
+
+        // write them back to the new file
         stack_ptr = oats.stack.stack_start_loc; // set stack pointer to stack start to 'wipe' everything
-        for (items.items) |item|
-            try oats.stack.push(file, &stack_ptr, item);
+        for (items.items) |item| {
+            const raw_item = try allocator.alloc(u8, item.size);
+            defer allocator.free(raw_item);
+            try file.seekTo(item.start_idx);
+            _ = try file.readAll(raw_item);
+            try oats.stack.push(tmp_file, &stack_ptr, raw_item);
+        }
+
+        // write stack pointer back to the database
+        try tmp_file.seekTo(oats.stack.stack_ptr_loc);
+        try tmp_file.writer().writeInt(u64, stack_ptr, .big);
+
+        // replace the database with the temporary one
+        try std.fs.deleteFileAbsolute(path);
+        try std.fs.renameAbsolute(tmp_path, path);
 
         return;
     }
@@ -382,19 +464,19 @@ pub fn main() !void {
         // read ptr instead of stack ptr (read from start)
         var read_ptr: u64 = oats.stack.stack_start_loc;
 
-        // store it into a hashmap
-        var items = std.hash_map.AutoHashMap(u64, []const u8).init(allocator);
+        // store the ids of the items in the stack in an arraylist to check later (cache locality)
+        var items = std.ArrayList(u64).init(allocator);
         defer items.deinit();
-        defer {
-            var iter = items.valueIterator();
-            while (iter.next()) |item| allocator.free(item.*);
-        }
         while (read_ptr != stack_ptr) {
             // read the next item and decode it
+            const start_idx = read_ptr + @sizeOf(u32);
             const raw_item = try oats.stack.readStackEntry(allocator, file, &read_ptr);
-            const id = oats.item.unpack(raw_item).id;
-            try items.put(id, raw_item);
+            defer allocator.free(raw_item);
+            const id = oats.item.unpack(start_idx, raw_item).id;
+            try items.append(id);
         }
+        // sort the ids (for binaru search)
+        std.mem.sortUnstable(u64, items.items, {}, basicLessThan(u64));
 
         // read the contents of the database to import
 
@@ -419,21 +501,29 @@ pub fn main() !void {
         // read ptr instead of stack ptr (read from start)
         read_ptr = oats.stack.stack_start_loc;
 
-        // store imported items into a hashmap
+        // check the id against the list of pre-existing stack items to avoid collisions
         while (read_ptr != istack_ptr) {
-            // read the next item and decode it
+            // read the next item and decode it's id
+            const start_idx = read_ptr + @sizeOf(u32);
             const raw_item = try oats.stack.readStackEntry(allocator, ifile, &read_ptr);
-            const id = oats.item.unpack(raw_item).id;
-            try items.put(id, raw_item);
+            defer allocator.free(raw_item);
+            const id = oats.item.unpack(start_idx, raw_item).id;
+
+            // make sure there are no duplicates
+
+            // first check if the id is even within the already established 'bounds'
+            if (items.items.len == 0 or id < items.items[0] or id > items.items[items.items.len-1]) {}
+            
+            // check if the id is present already
+            else if (binarySearch(id, items.items) != null)
+                continue;
+
+            // write the item to the stack
+            try oats.stack.push(file, &stack_ptr, raw_item);
+            try items.append(id);
         }
 
-        // write them back to the file
-        stack_ptr = oats.stack.stack_start_loc; // set stack pointer to stack start to 'wipe' everything
-        var iter = items.valueIterator();
-        while (iter.next()) |item|
-            try oats.stack.push(file, &stack_ptr, item.*);
-
-        // write stack pointer to database
+        // write stack pointer back to the database
         try file.seekTo(oats.stack.stack_ptr_loc);
         try file.writer().writeInt(u64, stack_ptr, .big);
 
@@ -572,12 +662,19 @@ pub fn main() !void {
         defer buffered.flush() catch {};
         while (read_ptr != stack_ptr) {
             // read the next item and decode it
+            const start_idx = read_ptr + @sizeOf(u32);
             const raw_item = try oats.stack.readStackEntry(allocator, file, &read_ptr);
             defer allocator.free(raw_item);
-            const item = oats.item.unpack(raw_item);
+            const item = oats.item.unpack(start_idx, raw_item);
+
+            // read contents
+            const contents = try allocator.alloc(u8, item.size - item.contents_offset);
+            defer allocator.free(contents);
+            try file.seekTo(item.start_idx + item.contents_offset);
+            _ = try file.readAll(contents);
 
             // write to stdout
-            try oats.format.markdown(buffered.writer(), tz_offset, item.features, item.contents, prev_features);
+            try oats.format.markdown(buffered.writer(), tz_offset, item.features, contents, prev_features);
 
             prev_features = item.features;
         }

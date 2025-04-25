@@ -12,6 +12,28 @@ pub const FeaturesBitfield = packed struct(u8) {
     _padding: u6 = 0,
 };
 
+/// General metadata of a stack item (for reading) so you don't have to keep
+/// the entirety of the item's contents in memory
+pub const Metadata = struct {
+    /// The unique identifier for the stack item
+    id: u64,
+    /// The features & feature data of the stack item
+    features: Features,
+    /// The start index of the item's data in the database file
+    start_idx: usize,
+    /// The offset of the contents from the start index
+    /// (accounts for features, features should not be larger than 256 bytes)
+    contents_offset: u8,
+    /// The size of the stack entry
+    size: u32,
+
+    /// Finds if the id of this is less or larger than another item
+    pub fn idLessThan(context: void, a: Metadata, b: Metadata) bool {
+        _ = context;
+        return a.id < b.id;
+    }
+};
+
 /// The actual data of the features defined by the features bitfield
 pub const Features = struct {
     /// The UNIX timestamp creation date of the stack item
@@ -24,15 +46,6 @@ pub fn featuresSize(features: Features) usize {
     if (features.timestamp != null) size += @sizeOf(@TypeOf(features.timestamp.?));
 
     return size;
-}
-
-/// Checks if a raw item's id is larger than another item's id
-pub fn rawItemIdLessThan(_: void, lhs: []const u8, rhs: []const u8) bool {
-    // unpack them
-    const unpacked_lhs = unpack(lhs);
-    const unpacked_rhs = unpack(rhs);
-
-    return unpacked_lhs.id < unpacked_rhs.id;
 }
 
 /// Packs together contents with the feature bitfield and returns it, owned by the caller
@@ -66,9 +79,8 @@ pub fn pack(allocator: std.mem.Allocator, id: u64, features: Features, contents:
     return buffer;
 }
 
-/// Unpacks the stack item
-/// note: the returned contents reference the item data
-pub fn unpack(item: []const u8) struct{ id: u64, features: Features, contents: []const u8 } {
+/// Unpacks the stack item from it's encoded form and also it's location (offset) in the database file
+pub fn unpack(start_idx: usize, item: []const u8) Metadata {
     // offset to make things easier
     var offset: usize = 0;
 
@@ -92,6 +104,8 @@ pub fn unpack(item: []const u8) struct{ id: u64, features: Features, contents: [
     return .{
         .id = id,
         .features = features,
-        .contents = item[offset..]
+        .start_idx = start_idx,
+        .contents_offset = @intCast(offset),
+        .size = @intCast(item.len),
     };
 }
