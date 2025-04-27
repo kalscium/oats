@@ -12,7 +12,7 @@ const termios = @cImport({
 const ioctl = @cImport(@cInclude("sys/ioctl.h"));
 const main = @import("main.zig");
 
-const help = "\n\x1b[35m<<< \x1b[0;1mOATS SESSION \x1b[35m>>>\x1b[0m\n\x1b[35m*\x1b[0m welcome to a space for random thughts or notes!\n\x1b[35m*\x1b[0m some quick controls:\n  \x1b[35m*\x1b[0m CTRL+D or \x1b[36m:\x1b[0mexit to exit the thought session\n  \x1b[35m*\x1b[0m CTRL+C to cancel the line\n  \x1b[35m*\x1b[0m `\x1b[36m:\x1b[0mhelp` to print this help message\n  \x1b[35m*\x1b[0m `\x1b[36m:\x1b[0mtail <n>` to print the last <n> stack items\n  \x1b[35m*\x1b[0m `\x1b[36m:\x1b[0mpop <n>` to pop the last <n> stack items\n  \x1b[35m*\x1b[0m `\x1b[36m:\x1b[0mclear` to clear the screen\n";
+const help = "\x1b[35m<<< \x1b[0;1mOATS SESSION \x1b[35m>>>\x1b[0m\n\x1b[35m*\x1b[0m welcome to a space for random thughts or notes!\n\x1b[35m*\x1b[0m some quick controls:\n  \x1b[35m*\x1b[0m CTRL+D or \x1b[36m:\x1b[0mexit to exit the thought session\n  \x1b[35m*\x1b[0m CTRL+C to cancel the line\n  \x1b[35m*\x1b[0m `\x1b[36m:\x1b[0mhelp` to print this help message\n  \x1b[35m*\x1b[0m `\x1b[36m:\x1b[0mtail <n>` to print the last <n> stack items\n  \x1b[35m*\x1b[0m `\x1b[36m:\x1b[0mpop <n>` to pop the last <n> stack items\n  \x1b[35m*\x1b[0m `\x1b[36m:\x1b[0mclear` to clear the screen\n";
 
 /// Enables the terminal raw mode and also returns the original mode so you can switch back
 pub fn enableRawMode() termios.struct_termios {
@@ -65,7 +65,7 @@ pub fn wrapLine(
     const offset_ln = (cursor-1) / coloumns;
     const total_ln = line.len / coloumns;
 
-    try stdout.writeAll("\x1B[s\x1B[?25l\x1B[0K");
+    try stdout.writeAll("\x1B[?25l\x1B[0K");
 
     // write the first line the cursor is on
     const first_line = line[cursor-1..@min(line.len, (offset_ln + 1) * coloumns)];
@@ -92,14 +92,25 @@ pub fn wrapLine(
     }
 
     // set the free_lines state to the position of the cursor
-    free_lines.* += total_ln - offset_ln;
+    free_lines.* = total_ln - offset_ln;
 
-    // move it back to it's starting position and then unhide it
-    try stdout.writeAll("\x1B[u\x1B[?25h");
+    // move the cursor back to it's starting position
+    if (free_lines.* > 0)
+        try std.fmt.format(stdout, "\x1B[{}A", .{free_lines.*});
+    const moved: isize = @as(isize, @intCast(line.len % coloumns)) - @as(isize, @intCast((cursor - 1) % coloumns));
+    if (moved > 0)
+        try std.fmt.format(stdout, "\x1B[{}D", .{moved})
+    else if (moved < 0)
+        try std.fmt.format(stdout, "\x1B[{}C", .{-moved});
+
+    // unhide it
+    try stdout.writeAll("\x1B[?25h");
 }
 
 /// Reads a line from stdin with the specified prompt in raw mode and returns it, owned by caller
 pub fn readLine(allocator: std.mem.Allocator, comptime prompt_len: usize, prompt: []const u8, comptime wrap_prompt: []const u8) !std.ArrayList(u8) {
+    // can you imagine if I added line scrolling? that would be painful.
+
     var line = std.ArrayList(u8).init(allocator);
 
     var cursor: usize = line.items.len; // index into the line
@@ -121,6 +132,9 @@ pub fn readLine(allocator: std.mem.Allocator, comptime prompt_len: usize, prompt
     // if a command was run
     var command_run = false;
 
+    // if the line is to be cleared
+    var clear_line = false;
+
     // keep reading until EOF or new-line
     while (std.io.getStdIn().reader().readByte()) |char| {
         // check for CTRL+D (exit)
@@ -128,8 +142,7 @@ pub fn readLine(allocator: std.mem.Allocator, comptime prompt_len: usize, prompt
 
         // check for CTRL+C (clear)
         if (char == 3) {
-            line.deinit();
-            line = @TypeOf(line).init(allocator);
+            clear_line = true;
             break;
         }
 
@@ -239,7 +252,7 @@ pub fn readLine(allocator: std.mem.Allocator, comptime prompt_len: usize, prompt
             if (cursor == 0) continue;
 
             // print changes to terminal
-             
+
             // if you've already reached the start of the console line, then go
             // to the above one (line wrapping)
             if (cursor % coloumns == 0) {
@@ -280,12 +293,18 @@ pub fn readLine(allocator: std.mem.Allocator, comptime prompt_len: usize, prompt
         }
     } else |_| {}
 
-    // cleanup (jump after all the lines and free lines and create a new-line)
-    const cleanup_jump = free_lines + line.items.len / coloumns - cursor / coloumns;
-    if (cleanup_jump != 0)
-        try std.fmt.format(stdout, "\x1B[{}B", .{cleanup_jump});
-    if (!command_run)
+    // cleanup (jump to the last line and then create a new line)
+    if (line.items.len / coloumns > 0) { // only jump if the line spans more than one console line
+        const cleanup_jump = line.items.len / coloumns - (cursor - 1) / coloumns;
+        if (cleanup_jump != 0) // only jump if the cursor isn't already on the last line
+            try std.fmt.format(stdout, "\x1B[{}B", .{cleanup_jump});
+    }
+    if (!command_run) // move down a line so you don't overwrite it (only for non-commands)
         try std.fmt.format(stdout, "\x1B[{}G\n", .{prompt_len});
+    if (clear_line) {
+        line.deinit();
+        line = @TypeOf(line).init(allocator);
+    }
 
     return line;
 }
