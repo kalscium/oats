@@ -293,17 +293,35 @@ pub fn readLine(allocator: std.mem.Allocator, comptime prompt_len: usize, prompt
         }
     } else |_| {}
 
-    // cleanup (jump to the last line and then create a new line)
-    if (line.items.len / coloumns > 0) { // only jump if the line spans more than one console line
-        const cleanup_jump = line.items.len / coloumns - (cursor - 1) / coloumns;
-        if (cleanup_jump != 0) // only jump if the cursor isn't already on the last line
-            try std.fmt.format(stdout, "\x1B[{}B", .{cleanup_jump});
-    }
-    if (!command_run) // move down a line so you don't overwrite it (only for non-commands)
-        try std.fmt.format(stdout, "\x1B[{}G\n", .{prompt_len});
+    // cleanup (jump to either the first or last line to move onto the next note)
+
+    const lines = line.items.len / coloumns;
+
+    // if the line is cleared, jump to the first line
     if (clear_line) {
+        if (lines > 0) { // only jump if the cursor is not already on the first line
+            const cleanup_jump = (cursor - 1) / coloumns;
+            try std.fmt.format(stdout, "\x1B[?25l\x1B[{}A", .{cleanup_jump}); // hide the line and jump
+
+            // wipe all the lines after it and go back to the first line
+            try stdout.writeBytesNTimes("\x1B[1B\x1B[2K", lines);
+            try std.fmt.format(stdout, "\x1B[{}A", .{lines});
+        }
+
+        // clear the line and go to the start of it before unhiding the cursor
+        try stdout.writeAll("\x1B[?25h\x1B[2K\x1B[0G");
+
+        // free the line
         line.deinit();
         line = @TypeOf(line).init(allocator);
+    } else // ugly, but comment needed: this is when the line isn't cleared and needs to be jumped after it
+    if (!command_run) { // only jump if the line spans more than one console line
+        if (lines > 0) {
+            const cleanup_jump = lines - (cursor - 1) / coloumns;
+            if (cleanup_jump != 0) // only jump if the cursor isn't already on the last line
+                try std.fmt.format(stdout, "\x1B[{}B", .{cleanup_jump});
+        }
+        try std.fmt.format(stdout, "\x1B[{}G\n", .{prompt_len});
     }
 
     return line;
