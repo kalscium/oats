@@ -215,8 +215,14 @@ pub fn main() !void {
         const maj_ver = try file.reader().readInt(u8, .big);
         if (maj_ver != oats.maj_ver) return error.MajVersionMismatch;
 
+        // get the session id
+        const session_id = if (args.len >= 3)
+            try std.fmt.parseInt(i64, args[2], 10)
+        else std.time.milliTimestamp();
+        std.debug.print("starting session with id '{}'\n", .{session_id});
+
         // start the stack session
-        try session.session(allocator, file);
+        try session.session(allocator, file, session_id);
 
         return;
     }
@@ -256,7 +262,7 @@ pub fn main() !void {
 
         // get the time & construct the stack item
         const time = std.time.milliTimestamp();
-        const features: oats.item.Features = .{ .timestamp = time };
+        const features: oats.item.Features = .{ .timestamp = time, .session_id = null };
         const item = try oats.item.pack(allocator, @bitCast(time), features, args[2]);
         defer allocator.free(item);
 
@@ -656,10 +662,14 @@ pub fn main() !void {
 
         try std.io.getStdOut().writeAll("# Oats (Thoughts & Notes)\n---\n");
 
-        // iterate through the items, format them and print them
-        var prev_features = oats.item.Features{ .timestamp = null };
-        var buffered = std.io.bufferedWriter(std.io.getStdOut().writer());
-        defer buffered.flush() catch {};
+        // iterate through all the item metadatas and collect them into groups (based on session id)
+        var collections = std.AutoHashMap(i64, std.ArrayList(oats.item.Metadata)).init(allocator);
+        defer { // free everything
+            var iter = collections.valueIterator();
+            while (iter.next()) |list| list.deinit();
+            collections.deinit();
+        }
+        var null_sess_prev: ?i64 = null; // if the last thought had a null session id, then this would have the id/timestamp of it
         while (read_ptr != stack_ptr) {
             // read the next item and decode it
             const start_idx = read_ptr + @sizeOf(u32);
@@ -667,16 +677,66 @@ pub fn main() !void {
             defer allocator.free(raw_item);
             const item = oats.item.unpack(start_idx, raw_item);
 
-            // read contents
-            const contents = try allocator.alloc(u8, item.size - item.contents_offset);
-            defer allocator.free(contents);
-            try file.seekTo(item.start_idx + item.contents_offset);
-            _ = try file.readAll(contents);
+            // if it has a session id, then append to that session
+            if (item.features.session_id) |id| {
+                null_sess_prev = null;
+                // create the list if it doesn't exist already
+                const list = collections.getPtr(id) orelse getlist: {
+                    try collections.put(id, std.ArrayList(oats.item.Metadata).init(allocator));
+                    break :getlist collections.getPtr(id).?;
+                };
+                try list.append(item);
+                continue;
+            }
 
-            // write to stdout
-            try oats.format.markdown(buffered.writer(), tz_offset, item.features, contents, prev_features);
+            // otherwise, if there is a previous null session, then simply append to it, otherwise create a new one
+            if (null_sess_prev) |sess| {
+                try collections.getPtr(sess).?.append(item);
+            } else {
+                try collections.put(@bitCast(item.id), std.ArrayList(oats.item.Metadata).init(allocator));
+                try collections.getPtr(@bitCast(item.id)).?.append(item);
+                null_sess_prev = @bitCast(item.id);
+            }
+        }
 
-            prev_features = item.features;
+        // collect the keys and sort them
+        const coll_keys = try allocator.alloc(i64, collections.count());
+        defer allocator.free(coll_keys);
+        var coll_key_iter = collections.keyIterator();
+        var coll_key_i: usize = 0;
+        while (coll_key_iter.next()) |key| : (coll_key_i += 1)
+            coll_keys[coll_key_i] = key.*;
+        std.mem.sortUnstable(i64, coll_keys, {}, basicLessThan(i64));
+
+        // buffer stdout
+        var buffered = std.io.bufferedWriter(std.io.getStdOut().writer());
+        defer buffered.flush() catch {};
+
+        // iterate through the collections, format them and print them
+        var prev_features = oats.item.Features{ .timestamp = null, .session_id = null };
+        for (coll_keys) |key| {
+            const collection = collections.getPtr(key).?;
+
+            // the minimum amount of thoughts/notes in a collection (otherwise combined with the previous collection)
+            const min_collection_thres = 4;
+
+            // if it's smaller than the collection threshold, it doesn't count as a new collection
+            var new_col = collection.items.len >= min_collection_thres;
+
+            // iterate through the items, format them and print them
+            for (collection.items) |item| {
+                // read contents
+                const contents = try allocator.alloc(u8, item.size - item.contents_offset);
+                defer allocator.free(contents);
+                try file.seekTo(item.start_idx + item.contents_offset);
+                _ = try file.readAll(contents);
+
+                // write to stdout
+                try oats.format.markdown(buffered.writer(), tz_offset, item.features, contents, prev_features, new_col);
+
+                prev_features = item.features;
+                new_col = false;
+            }
         }
 
         return;

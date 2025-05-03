@@ -12,7 +12,7 @@ const termios = @cImport({
 const ioctl = @cImport(@cInclude("sys/ioctl.h"));
 const main = @import("main.zig");
 
-const help = "\x1b[35m<<< \x1b[0;1mOATS SESSION \x1b[35m>>>\x1b[0m\n\x1b[35m*\x1b[0m welcome to a space for random thughts or notes!\n\x1b[35m*\x1b[0m some quick controls:\n  \x1b[35m*\x1b[0m CTRL+D or \x1b[36m:\x1b[0mexit to exit the thought session\n  \x1b[35m*\x1b[0m CTRL+C to cancel the line\n  \x1b[35m*\x1b[0m `\x1b[36m:\x1b[0mhelp` to print this help message\n  \x1b[35m*\x1b[0m `\x1b[36m:\x1b[0mtail <n>` to print the last <n> stack items\n  \x1b[35m*\x1b[0m `\x1b[36m:\x1b[0mpop <n>` to pop the last <n> stack items\n  \x1b[35m*\x1b[0m `\x1b[36m:\x1b[0mclear` to clear the screen\n";
+const help = "\x1b[35m<<< \x1b[0;1mOATS SESSION \x1b[35m>>>\x1b[0m\n\x1b[35m*\x1b[0m welcome to a space for random thughts or notes!\n\x1b[35m*\x1b[0m some quick controls:\n  \x1b[35m*\x1b[0m CTRL+D or \x1b[36m:\x1b[0mexit to exit the thought session\n  \x1b[35m*\x1b[0m CTRL+C to cancel the line\n  \x1b[35m*\x1b[0m `\x1b[36m:\x1b[0mhelp` to print this help message\n  \x1b[35m*\x1b[0m `\x1b[36m:\x1b[0mtail <?n>` to print the last <n> stack items\n  \x1b[35m*\x1b[0m `\x1b[36m:\x1b[0mpop <?n>` to pop the last <n> stack items\n  \x1b[35m*\x1b[0m `\x1b[36m:\x1b[0mclear` to clear the screen\n  \x1b[35m*\x1b[0m `\x1b[36m:\x1b[0msession <?sess_id>` to change the session id\n";
 
 /// Enables the terminal raw mode and also returns the original mode so you can switch back
 pub fn enableRawMode() termios.struct_termios {
@@ -108,7 +108,7 @@ pub fn wrapLine(
 }
 
 /// Reads a line from stdin with the specified prompt in raw mode and returns it, owned by caller
-pub fn readLine(allocator: std.mem.Allocator, comptime prompt_len: usize, prompt: []const u8, comptime wrap_prompt: []const u8) !std.ArrayList(u8) {
+pub fn readLine(allocator: std.mem.Allocator, comptime prompt_len: usize, prompt: []const u8, comptime wrap_prompt: []const u8, sess_id: *i64) !std.ArrayList(u8) {
     // can you imagine if I added line scrolling? that would be painful.
 
     var line = std.ArrayList(u8).init(allocator);
@@ -163,7 +163,7 @@ pub fn readLine(allocator: std.mem.Allocator, comptime prompt_len: usize, prompt
             command_run = true;
             line.deinit();
             line = @TypeOf(line).init(allocator);
-            try readCommand(allocator);
+            try readCommand(allocator, sess_id);
             break;
         }
 
@@ -315,20 +315,21 @@ pub fn readLine(allocator: std.mem.Allocator, comptime prompt_len: usize, prompt
         line.deinit();
         line = @TypeOf(line).init(allocator);
     } else // ugly, but comment needed: this is when the line isn't cleared and needs to be jumped after it
-    if (!command_run) { // only jump if the line spans more than one console line
-        if (lines > 0) {
+    if (!command_run) {
+        if (lines > 0) { // only jump if the line spans more than one console line
             const cleanup_jump = lines - (cursor - 1) / coloumns;
             if (cleanup_jump != 0) // only jump if the cursor isn't already on the last line
                 try std.fmt.format(stdout, "\x1B[{}B", .{cleanup_jump});
         }
-        try std.fmt.format(stdout, "\x1B[{}G\n", .{prompt_len});
+        if (line.items.len % coloumns != 0 or line.items.len == 0) try stdout.writeByte('\n');
+        try std.fmt.format(stdout, "\x1B[{}G", .{prompt_len * 0});
     }
 
     return line;
 }
 
 /// Reads a line as a command from stdin with the specified prompt in raw mode and executes it
-pub fn readCommand(allocator: std.mem.Allocator) !void {
+pub fn readCommand(allocator: std.mem.Allocator, sess_id: *i64) !void {
     const prompt_len = 6;
     const prompt = "\x1b[2K\x1b[0G    \x1b[36;1m: \x1b[0m";
     const wrap_prompt = "\x1b[30;1m  ... \x1b[0m";
@@ -457,23 +458,34 @@ pub fn readCommand(allocator: std.mem.Allocator) !void {
         return;
     }
 
+    // check for the 'session' command
+    if (std.mem.eql(u8, split_first, "session")) {
+        sess_id.* = if (split.next()) |raw_sess_id|
+            try std.fmt.parseInt(i64, raw_sess_id, 10)
+        else std.time.milliTimestamp();
+        std.debug.print("updated session id to '{}'\n", .{sess_id.*});
+        return;
+    }
+
     // otherwise the command is invalid
     std.debug.print("error: unknown command '{s}'\n", .{split_first});
     return;
 }
 
 /// Starts the interactive oats session
-pub fn session(allocator: std.mem.Allocator, file: std.fs.File) !void {
+pub fn session(allocator: std.mem.Allocator, file: std.fs.File, isession_id: i64) !void {
     std.debug.print(help, .{});
 
     // enter raw mode, & enter cooked mode again upon exit
     const orig_termios = enableRawMode();
     defer _ = termios.tcsetattr(termios.STDIN_FILENO, termios.TCSAFLUSH, &orig_termios);
 
+    var session_id = isession_id;
+
     // session loop
     while (true) {
         // read the line
-        const line = try readLine(allocator, 4, "\x1b[35m=>> \x1b[0m", "\x1b[30;1m... \x1b[0m");
+        const line = try readLine(allocator, 4, "\x1b[35m=>> \x1b[0m", "\x1b[30;1m... \x1b[0m", &session_id);
         defer line.deinit();
 
         // skip empty lines
@@ -481,7 +493,10 @@ pub fn session(allocator: std.mem.Allocator, file: std.fs.File) !void {
 
         // pack the read line
         const timestamp = std.time.milliTimestamp();
-        const item = try oats.item.pack(allocator, @bitCast(timestamp), .{ .timestamp = timestamp }, line.items);
+        const item = try oats.item.pack(allocator, @bitCast(timestamp), .{
+            .timestamp = timestamp,
+            .session_id = session_id,
+        }, line.items);
         defer allocator.free(item);
 
         // read the stack ptr

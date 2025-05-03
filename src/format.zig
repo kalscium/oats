@@ -11,8 +11,8 @@ inline fn convert24to12(num: anytype) @TypeOf(num) {
 }
 
 /// Writes a stack item to a stream in the 'markdown' format, given the last stack item
-pub fn markdown(writer: anytype, tz_offset: i16, features: item.Features, contents: []const u8, prev_features: item.Features) !void {
-    // time will be printed between oats of at least a n minute time difference
+pub fn markdown(writer: anytype, tz_offset: i16, features: item.Features, contents: []const u8, prev_features: item.Features, new_col: bool) !void {
+    // time will be printed between oats of at least an n minute time difference
     const title_time_threshold = 8;
 
     // if there's no date then simply write the contents and dip
@@ -53,8 +53,9 @@ pub fn markdown(writer: anytype, tz_offset: i16, features: item.Features, conten
             date.time.minute,
             date.time.amOrPm(),
         });
-    } else if (prev_features.timestamp == null or datetime.Datetime.fromTimestamp(features.timestamp.? - prev_features.timestamp.?).toSeconds()/60 > title_time_threshold) {
-        try std.fmt.format(writer, "#### `{:0>2}:{:0>2} {s}`\n", .{
+    } else if (prev_features.timestamp == null or new_col or datetime.Datetime.fromTimestamp(features.timestamp.? - prev_features.timestamp.?).toSeconds()/60 > title_time_threshold) {
+        if (!new_col) try writer.writeByte('#');
+        try std.fmt.format(writer, "## `{:0>2}:{:0>2} {s}`\n", .{
             convert24to12(date.time.hour),
             date.time.minute,
             date.time.amOrPm(),
@@ -70,13 +71,18 @@ pub fn normalFeatures(allocator: std.mem.Allocator, file: std.fs.File, id: u64, 
     // calculate the 'worst case scenario' length
     const wcs_size = comptime blk: {
         // calculate the largest id
-        const largest_id = std.fmt.comptimePrint("{}", .{std.math.maxInt(u64)}).len;
+        const largest_id = @as(comptime_int, @intFromFloat(@floor(@log10(@as(comptime_float, @floatFromInt(std.math.maxInt(u64))))))) + 1;
 
-        // additional variables
+        // labels
+        const id_label = "id: ".len;
+        const date_label = ", date: ".len;
+        const session_id_label = ", sess_id: ".len;
+
+        // features
         const date = 25; // iso-8601 date size
-        const padding = 12; // padding and also the labels
+        const session_id = @as(comptime_int, @intFromFloat(@floor(@log10(@as(comptime_float, @floatFromInt(std.math.maxInt(i64))))))) + 2;
         
-        break :blk largest_id + date + padding;
+        break :blk largest_id + id_label + date_label + session_id_label + date + session_id;
     };
 
     var writer = file.writer();
@@ -102,6 +108,14 @@ pub fn normalFeatures(allocator: std.mem.Allocator, file: std.fs.File, id: u64, 
         try file.writeAll(", date: ");
         try file.writeAll(date_str);
         current_size += 25 + 8;
+    }
+
+    // write the session id if there is one
+    if (features.session_id) |timestamp| {
+        const session_id_str = try std.fmt.allocPrint(allocator, ", sess_id: {}", .{timestamp});
+        defer allocator.free(session_id_str);
+        try file.writeAll(session_id_str);
+        current_size += session_id_str.len;
     }
 
     // fill the gaps so the separator is in the same place
