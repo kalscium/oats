@@ -2,8 +2,6 @@
 > short for onetime notes - a friction-less stack-based database for all your
 > thoughts and notes that need only be written down once, so as to not forget.
 
-***note:** it only runs on linux so far*
-
 # Why Oats
 ---
 Why should you choose to use oats instead of any one of the thousands of note

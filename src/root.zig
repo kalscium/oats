@@ -6,7 +6,7 @@ pub const datetime = @import("datetime");
 const std = @import("std");
 
 /// The current semantic version
-pub const version = "0.5.0";
+pub const version = "0.5.1";
 
 /// The current major version of this cli (semantic versioning)
 pub const maj_ver = blk: {
@@ -25,7 +25,7 @@ pub fn getHome(allocator: std.mem.Allocator) ![]const u8 {
     defer env_map.deinit();
 
     // get the user-home
-    const user_home = env_map.get("HOME") orelse return error.HomeEnvVarUnset;
+    const user_home = env_map.get("HOME") orelse env_map.get("APPDATA") orelse return error.HomeEnvVarUnset;
 
     // construct and allocate the napkin home
     const home = try std.fmt.allocPrint(allocator, "{s}/.oats", .{user_home});

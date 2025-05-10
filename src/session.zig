@@ -3,40 +3,86 @@
 //! **note:** this is part of main as it's strictly only part of the CLI, and
 //!           doesn't fit in the context of a static library.
 
+const builtin = @import("builtin");
 const std = @import("std");
 const oats = @import("oats");
-const termios = @cImport({
-    @cInclude("termios.h");
-    @cInclude("unistd.h");
-});
-const ioctl = @cImport(@cInclude("sys/ioctl.h"));
 const main = @import("main.zig");
 
 const help = "\x1b[35m<<< \x1b[0;1mOATS SESSION \x1b[35m>>>\x1b[0m\n\x1b[35m*\x1b[0m welcome to a space for random thughts or notes!\n\x1b[35m*\x1b[0m some quick controls:\n  \x1b[35m*\x1b[0m CTRL+D or \x1b[36m:\x1b[0mexit to exit the thought session\n  \x1b[35m*\x1b[0m CTRL+C to cancel the line\n  \x1b[35m*\x1b[0m `\x1b[36m:\x1b[0mhelp` to print this help message\n  \x1b[35m*\x1b[0m `\x1b[36m:\x1b[0mtail <?n>` to print the last <n> stack items\n  \x1b[35m*\x1b[0m `\x1b[36m:\x1b[0mpop <?n>` to pop the last <n> stack items\n  \x1b[35m*\x1b[0m `\x1b[36m:\x1b[0mclear` to clear the screen\n  \x1b[35m*\x1b[0m `\x1b[36m:\x1b[0msession <?sess_id>` to change the session id\n";
 
-/// Enables the terminal raw mode and also returns the original mode so you can switch back
-pub fn enableRawMode() termios.struct_termios {
-    // get original flags
-    var orig: termios.struct_termios = undefined;
-    _ = termios.tcgetattr(termios.STDIN_FILENO, &orig);
+const TerminalFlags = switch (builtin.target.os.tag) {
+    .linux => std.os.linux.termios,
+    .windows => std.os.windows.DWORD,
+    else => @compileError("unsupported system"),
+};
 
-    // our custom 'raw' flags
-    var raw = orig;
-    // disable echo & line buffering
-    raw.c_lflag &= @bitCast(~(termios.ECHO | termios.ICANON));
-    // disable Ctrl-C & Ctrl-Z signals
-    raw.c_lflag &= @bitCast(~termios.ISIG);
-    // disable Ctrl-S & Ctrl-Q
-    raw.c_lflag &= @bitCast(~termios.IXON);
-    // disable Ctrl-V & fix Ctrl-M
-    raw.c_lflag &= @bitCast(~(termios.IEXTEN | termios.ICRNL));
-    // misc
-    raw.c_lflag &= @bitCast(~(termios.BRKINT | termios.INPCK | termios.ISTRIP));
-    raw.c_cflag |= @bitCast(termios.CS8);
+/// Gets the console window width (platform independant)
+pub fn windowWidth() !usize {
+    // linux implementation
+    if (comptime builtin.target.os.tag == .linux) {
+        const ioctl = @cImport(@cInclude("sys/ioctl.h"));
 
-    // set the attrs and return original
-    _ = termios.tcsetattr(termios.STDIN_FILENO, termios.TCSAFLUSH, &raw);
-    return orig;
+        var winsize: ioctl.winsize = undefined;
+        _ = ioctl.ioctl(std.os.linux.STDOUT_FILENO, ioctl.TIOCGWINSZ, &winsize);
+
+        return winsize.ws_col;
+    } else if (comptime builtin.target.os.tag == .windows) {
+        var csbi: std.os.windows.CONSOLE_SCREEN_BUFFER_INFO = undefined;
+        const handle = std.os.windows.kernel32.GetStdHandle(std.os.windows.STD_OUTPUT_HANDLE) orelse return error.ConsoleDevMissingHandle;
+        _ = std.os.windows.kernel32.GetConsoleScreenBufferInfo(handle, &csbi);
+        return @intCast(csbi.srWindow.Right - csbi.srWindow.Left + 1);
+    } else @compileError("unsupported operating system");
+}
+
+/// Enables a console mode (platform independant)
+pub fn setConMode(flags: *const TerminalFlags) !void {
+    switch (comptime builtin.target.os.tag) {
+        .linux => _ = std.os.linux.tcsetattr(std.os.linux.STDIN_FILENO, .FLUSH, flags),
+        .windows => _ = std.os.windows.kernel32.SetConsoleMode(try std.os.windows.GetStdHandle(std.os.windows.STD_INPUT_HANDLE), flags.*),
+        else => @compileError("unsupported system"),
+    }
+}
+
+/// Enables the terminal raw mode (platform independant) and returns the original mode so you can switch back
+pub fn enableRawMode() !TerminalFlags {
+    // linux implementation
+    if (comptime builtin.target.os.tag == .linux) {
+        // get original flags
+        var orig: std.os.linux.termios = undefined;
+        _ = std.os.linux.tcgetattr(std.os.linux.STDIN_FILENO, &orig);
+
+        // our custom 'raw' flags
+        var raw = orig;
+        // disable echo & line buffering
+        raw.lflag.ECHO  = false;
+        raw.lflag.ICANON = false;
+        // disable Ctrl-C & Ctrl-Z signals
+        raw.lflag.ISIG = false;
+        // disable Ctrl-S & Ctrl-Q
+            // raw.lflag.IXON = false;
+        // disable Ctrl-V & fix Ctrl-M
+        raw.lflag.IEXTEN  = false;
+            // raw.lflag.ICRNL = false;
+        // misc
+            // raw.lflag.BRKINT = false;
+            // raw.lflag.INPCK = false;
+            // raw.lflag.ISTRIP = false;
+        raw.cflag.CSTOPB = true;
+
+        // set the attrs and return original
+        _ = std.os.linux.tcsetattr(std.os.linux.STDIN_FILENO, .FLUSH, &raw);
+        return orig;
+    } else if (comptime builtin.os.tag == .windows) {
+        // flags
+        var orig: std.os.windows.DWORD = undefined;
+        const handle = std.os.windows.kernel32.GetStdHandle(std.os.windows.STD_INPUT_HANDLE) orelse return error.ConsoleDevMissingHandle;
+        _ = std.os.windows.kernel32.GetConsoleMode(handle, &orig);
+        const flags = orig & ~@as(std.os.windows.DWORD, 0x0002 | 0x0001 | 0x0004 | 0x0010 | 0x0020 | 0x0200);
+
+        _ = std.os.windows.kernel32.SetConsoleMode(handle, flags);
+
+        return orig;
+    } else @compileError("unsupported operating system");
 }
 
 /// Prints a line starting from a cursor wrapping at line ends
@@ -121,10 +167,8 @@ pub fn readLine(allocator: std.mem.Allocator, comptime prompt_len: usize, prompt
     try stdout.writeAll(prompt);
 
     // get window size
-    var winsize: ioctl.winsize = undefined;
-    _ = ioctl.ioctl(termios.STDOUT_FILENO, ioctl.TIOCGWINSZ, &winsize);
-
-    const coloumns = @as(usize, winsize.ws_col) - prompt_len;
+    const ws_col = try windowWidth();
+    const coloumns = ws_col - prompt_len;
 
     // keep track of free lines to write to
     var free_lines: usize = 0;
@@ -179,7 +223,7 @@ pub fn readLine(allocator: std.mem.Allocator, comptime prompt_len: usize, prompt
             // to the above one (line wrapping)
             if (cursor % coloumns == 0) {
                 try stdout.writeAll("\x1B[1A"); // go one up
-                try std.fmt.format(stdout, "\x1B[{}G", .{winsize.ws_col}); // go to end of line
+                try std.fmt.format(stdout, "\x1B[{}G", .{ws_col}); // go to end of line
                 free_lines += 1;
             } else {
                 try stdout.writeAll(&.{ 27, 91, 68 }); // otherwise just go left
@@ -256,7 +300,7 @@ pub fn readLine(allocator: std.mem.Allocator, comptime prompt_len: usize, prompt
             // if you've already reached the start of the console line, then go
             // to the above one (line wrapping)
             if (cursor % coloumns == 0) {
-                try std.fmt.format(stdout, "\x1B[1A\x1B[{}G", .{winsize.ws_col}); // go to end of line
+                try std.fmt.format(stdout, "\x1B[1A\x1B[{}G", .{ws_col}); // go to end of line
                 free_lines += 1;
             } else {
                 try stdout.writeAll(&.{ 27, 91, 68 }); // otherwise just go left
@@ -342,11 +386,8 @@ pub fn readCommand(allocator: std.mem.Allocator, sess_id: *i64) !void {
 
     try stdout.writeAll(prompt);
 
-    // get window size
-    var winsize: ioctl.winsize = undefined;
-    _ = ioctl.ioctl(termios.STDOUT_FILENO, ioctl.TIOCGWINSZ, &winsize);
-
-    const coloumns = @as(usize, winsize.ws_col) - prompt_len;
+    const ws_col = try windowWidth();
+    const coloumns = ws_col - prompt_len;
 
     // keep track of free lines to write to
     var free_lines: usize = 0;
@@ -380,7 +421,7 @@ pub fn readCommand(allocator: std.mem.Allocator, sess_id: *i64) !void {
             // if you've already reached the start of the console line, then go
             // to the above one (line wrapping)
             if (cursor % coloumns == 0) {
-                try std.fmt.format(stdout, "\x1B[1A\x1B[{}G", .{winsize.ws_col}); // go to end of line
+                try std.fmt.format(stdout, "\x1B[1A\x1B[{}G", .{ws_col}); // go to end of line
                 free_lines += 1;
             } else {
                 try stdout.writeAll(&.{ 27, 91, 68 }); // otherwise just go left
@@ -477,8 +518,8 @@ pub fn session(allocator: std.mem.Allocator, file: std.fs.File, isession_id: i64
     std.debug.print(help, .{});
 
     // enter raw mode, & enter cooked mode again upon exit
-    const orig_termios = enableRawMode();
-    defer _ = termios.tcsetattr(termios.STDIN_FILENO, termios.TCSAFLUSH, &orig_termios);
+    const orig_con_flags = try enableRawMode();
+    defer setConMode(&orig_con_flags) catch {};
 
     var session_id = isession_id;
 
