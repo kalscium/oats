@@ -8,7 +8,7 @@ const std = @import("std");
 const oats = @import("oats");
 const main = @import("main.zig");
 
-const help = "\x1b[35m<<< \x1b[0;1mOATS SESSION \x1b[35m>>>\x1b[0m\n\x1b[35m*\x1b[0m welcome to a space for random thughts or notes!\n\x1b[35m*\x1b[0m some quick controls:\n  \x1b[35m*\x1b[0m CTRL+D or \x1b[36m:\x1b[0mexit to exit the thought session\n  \x1b[35m*\x1b[0m CTRL+C to cancel the line\n  \x1b[35m*\x1b[0m `\x1b[36m:\x1b[0mhelp` to print this help message\n  \x1b[35m*\x1b[0m `\x1b[36m:\x1b[0mtail <?n>` to print the last <n> stack items\n  \x1b[35m*\x1b[0m `\x1b[36m:\x1b[0mpop <?n>` to pop the last <n> stack items\n  \x1b[35m*\x1b[0m `\x1b[36m:\x1b[0mclear` to clear the screen\n  \x1b[35m*\x1b[0m `\x1b[36m:\x1b[0msession <?sess_id>` to change the session id\n";
+const help = "\x1b[35m<<< \x1b[0;1mOATS SESSION \x1b[35m>>>\x1b[0m\n\x1b[35m*\x1b[0m welcome to a space for random thughts or notes!\n\x1b[35m*\x1b[0m some quick controls:\n  \x1b[35m*\x1b[0m CTRL+D or \x1b[36m:\x1b[0mexit to exit the thought session\n  \x1b[35m*\x1b[0m CTRL+C to cancel the line\n  \x1b[35m*\x1b[0m `\x1b[36m:\x1b[0mhelp` to print this help message\n  \x1b[35m*\x1b[0m `\x1b[36m:\x1b[0mtail <?n>` to print the last <n> stack items\n  \x1b[35m*\x1b[0m `\x1b[36m:\x1b[0mpop <?n>` to pop the last <n> stack items\n  \x1b[35m*\x1b[0m `\x1b[36m:\x1b[0mclear` to clear the screen\n  \x1b[35m*\x1b[0m `\x1b[36m:\x1b[0msession <?sess_id>` to change the session id\n  \x1b[35m*\x1b[0m `\x1b[36m:\x1b[0mimg <*images>` to push images to the oats stack\n";
 
 const TerminalFlags = switch (builtin.target.os.tag) {
     .linux => std.os.linux.termios,
@@ -207,7 +207,12 @@ pub fn readLine(allocator: std.mem.Allocator, comptime prompt_len: usize, prompt
             command_run = true;
             line.deinit();
             line = @TypeOf(line).init(allocator);
-            try readCommand(allocator, sess_id);
+            readCommand(allocator, sess_id) catch |err| {
+                // don't crash on errors
+                // except for user interrupts
+                if (err == error.UserInterrupt) return err;
+                std.debug.print("error: {!}\n", .{err});
+            };
             break;
         }
 
@@ -489,6 +494,23 @@ pub fn readCommand(allocator: std.mem.Allocator, sess_id: *i64) !void {
         try main.pop(allocator, to_pop);
         return;
     }
+
+    // check for the 'img' command
+    if (std.mem.eql(u8, split_first, "img")) {
+        // collect the arguments
+        const args_len = std.mem.count(u8, line.items, " ");
+        const args = try allocator.alloc([]const u8, args_len);
+        defer allocator.free(args);
+        var i: usize = 0;
+        while (split.next()) |arg| : (i += 1) args[i] = arg;
+
+        // check for args
+        if (args.len < 1) return error.ExpectedArgument;
+
+        try main.pushImg(allocator, sess_id.*, args);
+
+        return;
+   }
 
     // check for the 'tail' command
     if (std.mem.eql(u8, split_first, "tail")) {

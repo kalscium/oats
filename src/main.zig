@@ -72,7 +72,7 @@ pub fn pop(allocator: std.mem.Allocator, to_pop: usize) !void {
         // pop the last item and decode it
         const raw_item = try oats.stack.pop(allocator, file, &stack_ptr);
         defer allocator.free(raw_item);
-        const item = oats.item.unpack(stack_ptr + @sizeOf(u32), raw_item);
+        const item = try oats.item.unpack(allocator, stack_ptr + @sizeOf(u32), raw_item);
 
         // read it's contents
         const contents = try allocator.alloc(u8, item.size - item.contents_offset);
@@ -80,8 +80,62 @@ pub fn pop(allocator: std.mem.Allocator, to_pop: usize) !void {
         try file.seekTo(item.start_idx + item.contents_offset);
         _ = try file.readAll(contents);
 
-        try oats.format.normalFeatures(allocator, std.io.getStdErr(), item.id, item.features);
-        try std.fmt.format(std.io.getStdOut().writer(), "{s}\n", .{contents});
+        try oats.format.normal(allocator, std.io.getStdErr(), item.id, item.features, contents);
+    }
+
+    // update the stack ptr
+    try file.seekTo(oats.stack.stack_ptr_loc);
+    try file.writer().writeInt(u64, stack_ptr, .big);
+}
+
+pub fn pushImg(allocator: std.mem.Allocator, session_id: ?i64, img_paths: []const []const u8) !void {
+    // if database file doesn't exist throw error
+    const path = try oats.getHome(allocator);
+    if (std.fs.accessAbsolute(path, .{})) {}
+    else |err| {
+        std.debug.print("info: no oats database found, try running 'oats wipe' to initialize a new one\n", .{});
+        return err;
+    }
+
+    // open the database file
+    defer allocator.free(path);
+    var file = try std.fs.openFileAbsolute(path, .{ .mode = .read_write });
+    defer file.close();
+
+    // double-check the magic sequence
+    var magic: [oats.magic_seq.len]u8 = undefined;
+    _ = try file.readAll(&magic);
+    if (!std.mem.eql(u8, &magic, oats.magic_seq)) return error.MagicMismatch;
+
+    // make sure it's of the right major version
+    const maj_ver = try file.reader().readInt(u8, .big);
+    if (maj_ver != oats.maj_ver) return error.MajVersionMismatch;
+
+    // get the stack ptr
+    var stack_ptr = try file.reader().readInt(u64, .big);
+
+    // iterate through the image paths and push each of them
+    for (img_paths) |img_path| {
+        // open the image file
+        const fimage = try std.fs.cwd().openFile(img_path, .{});
+        const image = try fimage.readToEndAlloc(allocator, (try fimage.metadata()).size());
+        defer allocator.free(image);
+
+        // get the time & construct the stack item
+        const time = std.time.milliTimestamp();
+        var path_iter = std.mem.splitBackwardsScalar(u8, img_path, '/');
+        const features: oats.item.Features = .{
+            .timestamp = time,
+            .session_id = session_id,
+            .image_filename = path_iter.first(),
+        };
+        const item = try oats.item.pack(allocator, @bitCast(time), features, image);
+        defer allocator.free(item);
+
+        // push the item
+        try oats.stack.push(file, &stack_ptr, item);
+
+        std.debug.print("pushed image '{s}'\n", .{img_path});
     }
 
     // update the stack ptr
@@ -125,7 +179,7 @@ pub fn tail(allocator: std.mem.Allocator, to_pop: usize) !void {
         // pop the last item and decode it
         const raw_item = try oats.stack.pop(allocator, file, &stack_ptr);
         defer allocator.free(raw_item);
-        const item = oats.item.unpack(stack_ptr + @sizeOf(u32), raw_item);
+        const item = try oats.item.unpack(allocator, stack_ptr + @sizeOf(u32), raw_item);
 
         // read it's contents
         const contents = try allocator.alloc(u8, item.size - item.contents_offset);
@@ -133,8 +187,7 @@ pub fn tail(allocator: std.mem.Allocator, to_pop: usize) !void {
         try file.seekTo(item.start_idx + item.contents_offset);
         _ = try file.readAll(contents);
 
-        try oats.format.normalFeatures(allocator, std.io.getStdErr(), item.id, item.features);
-        try std.fmt.format(std.io.getStdOut().writer(), "{s}\n", .{contents});
+        try oats.format.normal(allocator, std.io.getStdErr(), item.id, item.features, contents);
     }
 
     // note how the stack pointer isn't written, so the 'pops' are
@@ -275,6 +328,19 @@ pub fn main() !void {
         return;
     }
 
+    // checks for the 'push-img' command
+    if (std.mem.eql(u8, args[1], "push-img")) {
+        // check for the arg
+        if (args.len < 3) {
+            printHelp();
+            return error.ExpectedArgument;
+        }
+
+        try pushImg(allocator, null, args[2..]);
+
+        return;
+    }
+
     // checks for the 'pop' command
     if (std.mem.eql(u8, args[1], "pop")) {
         // parse the arg as int
@@ -336,7 +402,7 @@ pub fn main() !void {
             const start_idx = read_ptr + @sizeOf(u32);
             const raw_item = try oats.stack.readStackEntry(allocator, file, &read_ptr);
             defer allocator.free(raw_item);
-            const item = oats.item.unpack(start_idx, raw_item);
+            const item = try oats.item.unpack(allocator, start_idx, raw_item);
 
             // read the contents
             const contents = try allocator.alloc(u8, item.size - item.contents_offset);
@@ -344,8 +410,7 @@ pub fn main() !void {
             try file.seekTo(item.start_idx + item.contents_offset);
             _ = try file.readAll(contents);
 
-            try oats.format.normalFeatures(allocator, std.io.getStdErr(), item.id, item.features);
-            try std.fmt.format(std.io.getStdOut().writer(), "{s}\n", .{contents});
+            try oats.format.normal(allocator, std.io.getStdErr(), item.id, item.features, contents);
         }
 
         return;
@@ -390,7 +455,7 @@ pub fn main() !void {
             const start_idx = read_ptr + @sizeOf(u32);
             const raw_item = try oats.stack.readStackEntry(allocator, file, &read_ptr);
             defer allocator.free(raw_item);
-            const item = oats.item.unpack(start_idx, raw_item);
+            const item = try oats.item.unpack(allocator, start_idx, raw_item);
             try items.append(item);
         }
 
@@ -478,7 +543,7 @@ pub fn main() !void {
             const start_idx = read_ptr + @sizeOf(u32);
             const raw_item = try oats.stack.readStackEntry(allocator, file, &read_ptr);
             defer allocator.free(raw_item);
-            const id = oats.item.unpack(start_idx, raw_item).id;
+            const id = (try oats.item.unpack(allocator, start_idx, raw_item)).id;
             try items.append(id);
         }
         // sort the ids (for binaru search)
@@ -513,7 +578,7 @@ pub fn main() !void {
             const start_idx = read_ptr + @sizeOf(u32);
             const raw_item = try oats.stack.readStackEntry(allocator, ifile, &read_ptr);
             defer allocator.free(raw_item);
-            const id = oats.item.unpack(start_idx, raw_item).id;
+            const id = (try oats.item.unpack(allocator, start_idx, raw_item)).id;
 
             // make sure there are no duplicates
 
@@ -631,6 +696,12 @@ pub fn main() !void {
 
     // check for the 'markdown' command
     if (std.mem.eql(u8, args[1], "markdown")) {
+        // check for the arg
+        if (args.len < 3) {
+            printHelp();
+            return error.ExpectedArgument;
+        }
+
         // if database file doesn't exist throw error
         const path = try oats.getHome(allocator);
         if (std.fs.accessAbsolute(path, .{})) {}
@@ -657,8 +728,11 @@ pub fn main() !void {
         const stack_ptr = try file.reader().readInt(u64, .big);
         var read_ptr: u64 = oats.stack.stack_start_loc;
 
-        // get the timezone, otherwise default to new-york
-        const tz_offset = if (args.len > 2) try std.fmt.parseInt(i16, args[2], 10)*60 else oats.datetime.datetime.timezones.America.New_York.offset;
+        // get the timezone
+        const tz_offset = try std.fmt.parseInt(i16, args[2], 10)*60;
+
+        // get the media path
+        const media_path = if (args.len > 3) args[3] else null;
 
         try std.io.getStdOut().writeAll("# Oats (Thoughts & Notes)\n---\n");
 
@@ -675,7 +749,7 @@ pub fn main() !void {
             const start_idx = read_ptr + @sizeOf(u32);
             const raw_item = try oats.stack.readStackEntry(allocator, file, &read_ptr);
             defer allocator.free(raw_item);
-            const item = oats.item.unpack(start_idx, raw_item);
+            const item = try oats.item.unpack(allocator, start_idx, raw_item);
 
             // if it has a session id, then append to that session
             if (item.features.session_id) |id| {
@@ -717,25 +791,60 @@ pub fn main() !void {
         for (coll_keys) |key| {
             const collection = collections.getPtr(key).?;
 
-            // the minimum amount of thoughts/notes in a collection (otherwise combined with the previous collection)
-            const min_collection_thres = 4;
-
-            // if it's smaller than the collection threshold, it doesn't count as a new collection
-            var new_col = collection.items.len >= min_collection_thres;
-
             // iterate through the items, format them and print them
-            for (collection.items) |item| {
-                // read contents
-                const contents = try allocator.alloc(u8, item.size - item.contents_offset);
-                defer allocator.free(contents);
-                try file.seekTo(item.start_idx + item.contents_offset);
-                _ = try file.readAll(contents);
+            var i: usize = 0;
+            while (i < collection.items.len) : (i += 1) {
+                const item = collection.items[i];
 
-                // write to stdout
-                try oats.format.markdown(buffered.writer(), tz_offset, item.features, contents, prev_features, new_col);
+                // write the markdown header
+                try oats.format.markdownHeader(buffered.writer(), tz_offset, item.features, prev_features, i == 0);
+                defer prev_features = item.features;
 
-                prev_features = item.features;
-                new_col = false;
+                // if it's simply a text item, then read the contents and write it
+                if (item.features.image_filename == null) {
+                    const contents = try allocator.alloc(u8, item.size - item.contents_offset);
+                    defer allocator.free(contents);
+                    try file.seekTo(item.start_idx + item.contents_offset);
+                    _ = try file.readAll(contents);
+
+                    try oats.format.markdownText(buffered.writer(), contents);
+                    continue;
+                }
+
+                // otherwise, collect together all the consecutive images into a slice
+                var img_idx: usize = i;
+                while (img_idx < collection.items.len and collection.items[img_idx].features.image_filename != null)
+                    img_idx += 1;
+                const images = collection.items[i..img_idx];
+                i = img_idx - 1;
+
+                // create the media path and try write the image files
+                const media = media_path orelse continue; // if a media path isn't included, dispose of images
+                std.fs.cwd().access(media, .{}) catch try std.fs.cwd().makeDir(media);
+                const media_session = try std.fmt.allocPrint(allocator, "{s}/{}", .{
+                    media,
+                    item.features.session_id orelse item.features.timestamp orelse 0,
+                });
+                defer allocator.free(media_session);
+                std.fs.cwd().access(media, .{}) catch try std.fs.cwd().makeDir(media);
+                std.fs.cwd().access(media_session, .{}) catch try std.fs.cwd().makeDir(media_session);
+                for (images) |image| {
+                    // read contents
+                    const contents = try allocator.alloc(u8, image.size - image.contents_offset);
+                    defer allocator.free(contents);
+                    try file.seekTo(image.start_idx + image.contents_offset);
+                    _ = try file.readAll(contents);
+
+                    // write to file path
+                    const image_path = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ media_session, image.features.image_filename.? });
+                    defer allocator.free(image_path);
+                    var img_file = try std.fs.cwd().createFile(image_path, .{});
+                    try img_file.writeAll(contents);
+                    img_file.close();
+                }
+
+                // export the image in markdown format (actually HTML)
+                try oats.format.markdownImgs(buffered.writer(), media_session, images);
             }
         }
 
@@ -752,20 +861,21 @@ fn printHelp() void {
     const help =
         \\Usage: oats [command]
         \\Commands:
-        \\    session       | starts an interactive session that pushes thoughts/notes to the stack from stdin
-        \\    push <text>   | push a singular thought/note to the stack
-        \\    pop  <n>      | pops <n> (defaults to 1) items off the stack (removes it)
-        \\    tail <n>      | prints the last <n> (defaults to 1) stack items (thoughts/notes)
-        \\    head <n>      | prints the first <n> (defaults to 1) stack items (thoughts/notes)
-        \\    count         | counts the amount of items on the stack and prints it to stdout
-        \\    sort          | sorts the contents of the oats database based on id
-        \\    markdown <tz> | pretty-prints the items on the stack in the markdown format, provided with a timezone offset (defaults to new york)
-        \\    raw           | writes the raw contents of the database to stdout (pipe to a file for backups)
-    	\\    import <path> | reads the raw contents of a database (backup) from the path provided and combines it with the current database
-        \\    wipe          | wipes all the contents of the stack and creates a new one
+        \\    session <?sess_id>     | starts an interactive session that pushes thoughts/notes to the stack from stdin with the specificed session id (defaults to current timestamp)
+        \\    push <text>            | push a singular thought/note to the oats stack
+        \\    push-img <*paths>      | pushs images to the oats stack
+        \\    pop  <?n>              | pops <n> (defaults to 1) items off the stack (removes it)
+        \\    tail <?n>              | prints the last <n> (defaults to 1) stack items (thoughts/notes)
+        \\    head <?n>              | prints the first <n> (defaults to 1) stack items (thoughts/notes)
+        \\    count                  | counts the amount of items on the stack and prints it to stdout
+        \\    sort                   | sorts the contents of the oats database based on id
+        \\    markdown <tz> <?media> | pretty-prints the items on the stack in the markdown format, provided with a timezone offset and a path to put media (images & videos) (discarded if not provided)
+        \\    raw                    | writes the raw contents of the database to stdout (pipe to a file for backups)
+    	\\    import <path>          | reads the raw contents of a database (backup) from the path provided and combines it with the current database
+        \\    wipe                   | wipes all the contents of the stack and creates a new one
         \\Options:
-        \\    -h, --help    | prints this help message
-        \\    -V, --version | prints the version
+        \\    -h, --help             | prints this help message
+        \\    -V, --version          | prints the version
         \\
     ;
     std.debug.print(help, .{});

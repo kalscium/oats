@@ -9,8 +9,9 @@ pub const FeaturesBitfield = packed struct(u8) {
     extended: bool = false,
     has_timestamp: bool,
     has_session_id: bool,
+    is_image: bool,
 
-    _padding: u5 = 0,
+    _padding: u4 = 0,
 };
 
 /// General metadata of a stack item (for reading) so you don't have to keep
@@ -38,18 +39,42 @@ pub const Metadata = struct {
 /// The actual data of the features defined by the features bitfield
 pub const Features = struct {
     /// The UNIX timestamp creation date of the stack item
-    timestamp: ?i64,
+    timestamp: ?i64 = null,
     /// The UNIX timestamp/id of an oats session
-    session_id: ?i64,
+    session_id: ?i64 = null,
+    /// The image filename
+    image_filename: ?[]const u8 = null,
 };
 
 /// Calculates the size based upon the features enabled
 pub fn featuresSize(features: Features) usize {
     var size: usize = @sizeOf(FeaturesBitfield);
-    if (features.timestamp != null) size += @sizeOf(@TypeOf(features.timestamp.?));
-    if (features.session_id != null) size += @sizeOf(@TypeOf(features.session_id.?));
+
+    // generic comptime for getting the struct size of features
+    inline for (comptime @typeInfo(Features).Struct.fields) |field| {
+        // only add to it, if it's enabled
+        if (@field(features, field.name)) |feature|
+            size += @sizeOf(@TypeOf(feature));
+    }
+
+    // special case for filenames as it has a dynamic size
+    if (features.image_filename) |filename| {
+        // remove the size of the slice
+        size -= @sizeOf(@TypeOf(filename));
+        // push the size of the filename and size of the length
+        size += @sizeOf(u16) + filename.len;
+    }
 
     return size;
+}
+
+/// Generates a features bitfield based on the features enabled
+pub fn featuresToBitfield(features: Features) FeaturesBitfield {
+    return FeaturesBitfield{
+        .has_timestamp = features.timestamp != null,
+        .has_session_id = features.session_id != null,
+        .is_image = features.image_filename != null,
+    };
 }
 
 /// Packs together contents with the feature bitfield and returns it, owned by the caller
@@ -65,10 +90,7 @@ pub fn pack(allocator: std.mem.Allocator, id: u64, features: Features, contents:
     offset += @sizeOf(u64);
 
     // write the bitfield
-    const bitfield = FeaturesBitfield{
-        .has_timestamp = features.timestamp != null,
-        .has_session_id = features.session_id != null,
-    };
+    const bitfield = featuresToBitfield(features);
     buffer[offset] = std.mem.nativeToBig(u8, @bitCast(bitfield));
     offset += @sizeOf(FeaturesBitfield);
 
@@ -84,6 +106,17 @@ pub fn pack(allocator: std.mem.Allocator, id: u64, features: Features, contents:
         offset += @sizeOf(@TypeOf(timestamp));
     }
 
+    // write the filename
+    if (features.image_filename) |filename| {
+        // write the length of the filename
+        @memcpy(buffer[offset..offset+@sizeOf(u16)], std.mem.asBytes(&std.mem.nativeToBig(u16, @intCast(filename.len))));
+        offset += @sizeOf(u16);
+
+        // write the contents
+        @memcpy(buffer[offset..offset+filename.len], filename);
+        offset += filename.len;
+    }
+
     // write the rest of the contents
     @memcpy(buffer[offset..], contents);
 
@@ -91,12 +124,12 @@ pub fn pack(allocator: std.mem.Allocator, id: u64, features: Features, contents:
 }
 
 /// Unpacks the stack item from it's encoded form and also it's location (offset) in the database file
-pub fn unpack(start_idx: usize, item: []const u8) Metadata {
+pub fn unpack(allocator: std.mem.Allocator, start_idx: usize, item: []const u8) !Metadata {
     // offset to make things easier
     var offset: usize = 0;
 
     // result
-    var features = Features{ .timestamp = null, .session_id = null };
+    var features = Features{};
 
     // decode the id
     const id = std.mem.bigToNative(u64, std.mem.bytesToValue(u64, item[0..@sizeOf(u64)]));
@@ -116,6 +149,20 @@ pub fn unpack(start_idx: usize, item: []const u8) Metadata {
     if (features_bitfield.has_session_id) {
         features.session_id = std.mem.bigToNative(@TypeOf(features.session_id.?), std.mem.bytesToValue(@TypeOf(features.session_id.?), item[offset..offset+@sizeOf(@TypeOf(features.session_id.?))]));
         offset += @sizeOf(@TypeOf(features.session_id.?));
+    }
+
+    // decode the image metadata
+    if (features_bitfield.is_image) {
+        // decode the filename length
+        const fn_len = std.mem.bigToNative(u16, std.mem.bytesToValue(u16, item[offset..offset+@sizeOf(u16)]));
+        offset += @sizeOf(u16);
+
+        // decode the filename
+        // allocate the filename
+        const filename = try allocator.alloc(u8, fn_len);
+        @memcpy(filename, item[offset..offset+fn_len]);
+        offset += fn_len;
+        features.image_filename = filename;
     }
 
     return .{

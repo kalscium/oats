@@ -10,14 +10,37 @@ inline fn convert24to12(num: anytype) @TypeOf(num) {
     else return num % 12;
 }
 
-/// Writes a stack item to a stream in the 'markdown' format, given the last stack item
-pub fn markdown(writer: anytype, tz_offset: i16, features: item.Features, contents: []const u8, prev_features: item.Features, new_col: bool) !void {
+/// Writes a image stack items to a stream in the 'markdown' format, given the last stack item
+pub fn markdownImgs(writer: anytype, media_path: []const u8, images: []const item.Metadata) !void {
+    // write the opening HTML tag
+    try std.fmt.format(writer, "<details>\n    <summary><i>{} Included Image{s}</i></summary>\n", .{
+        images.len,
+        if (images.len > 1) "s" else "",
+    });
+
+    // iterate through the images metadata and write that paths (media files should exist atp)
+    for (images) |image| {
+        try std.fmt.format(writer, "    <code>{s}</code>\n    <img src=\"{s}/{s}\" alt=\"{s}\">\n", .{
+            image.features.image_filename.?,
+            media_path,
+            image.features.image_filename.?,
+            image.features.image_filename.?,
+        });
+    }
+
+    // write the closing HTML tag
+    try writer.writeAll("</details>\n");
+}
+
+/// Writes a markdown header if certain conditions are met based upon the
+/// current & previous features and also if a new collection has been started
+pub fn markdownHeader(writer: anytype, tz_offset: i16, features: item.Features, prev_features: item.Features, new_col: bool) !void {
     // time will be printed between oats of at least an n minute time difference
     const title_time_threshold = 8;
 
-    // if there's no date then simply write the contents and dip
+    // if there's no date then simply dip
     if (features.timestamp == null)
-        return std.fmt.format(writer, "- {s}\n", .{contents});
+        return;
 
     // get the timezone, accounting for daylight savings (approx)
     var timezone = datetime.Timezone.create("CustomOffset", tz_offset);
@@ -43,7 +66,7 @@ pub fn markdown(writer: anytype, tz_offset: i16, features: item.Features, conten
             else if (date.date.day % 10 == 2 and date.date.day != 12) "nd"
             else if (date.date.day % 10 == 3 and date.date.day != 13) "rd"
             else "th";
-        try std.fmt.format(writer, "## {s}, {}{s} of {s} {} `{:0>2}:{:0>2} {s}`\n", .{
+        try std.fmt.format(writer, "\n## {s}, {}{s} of {s} {} `{:0>2}:{:0>2} {s}`\n", .{
             weekday,
             date.date.day,
             day_suffix,
@@ -54,6 +77,7 @@ pub fn markdown(writer: anytype, tz_offset: i16, features: item.Features, conten
             date.time.amOrPm(),
         });
     } else if (prev_features.timestamp == null or new_col or datetime.Datetime.fromTimestamp(features.timestamp.? - prev_features.timestamp.?).toSeconds()/60 > title_time_threshold) {
+        try writer.writeByte('\n');
         if (!new_col) try writer.writeByte('#');
         try std.fmt.format(writer, "## `{:0>2}:{:0>2} {s}`\n", .{
             convert24to12(date.time.hour),
@@ -61,13 +85,15 @@ pub fn markdown(writer: anytype, tz_offset: i16, features: item.Features, conten
             date.time.amOrPm(),
         });
     }
+}
 
-    // write the actual contents
+/// Writes a text stack item to a stream in the 'markdown' format
+pub fn markdownText(writer: anytype, contents: []const u8) !void { // redundant but whatever
     try std.fmt.format(writer, "- {s}\n", .{contents});
 }
 
-/// Writes a stack item's features to a stream in the 'normal' format
-pub fn normalFeatures(allocator: std.mem.Allocator, file: std.fs.File, id: u64, features: item.Features) !void {
+/// Writes a stack item's features and contents to a stream in the 'normal' format
+pub fn normal(allocator: std.mem.Allocator, file: std.fs.File, id: u64, features: item.Features, contents: []const u8) !void {
     // calculate the 'worst case scenario' length
     const wcs_size = comptime blk: {
         // calculate the largest id
@@ -77,12 +103,13 @@ pub fn normalFeatures(allocator: std.mem.Allocator, file: std.fs.File, id: u64, 
         const id_label = "id: ".len;
         const date_label = ", date: ".len;
         const session_id_label = ", sess_id: ".len;
+        const img_col_id_label = ", kind: image".len;
 
         // features
         const date = 25; // iso-8601 date size
         const session_id = @as(comptime_int, @intFromFloat(@floor(@log10(@as(comptime_float, @floatFromInt(std.math.maxInt(i64))))))) + 2;
         
-        break :blk largest_id + id_label + date_label + session_id_label + date + session_id;
+        break :blk largest_id + id_label + date_label + session_id_label + img_col_id_label + date + session_id;
     };
 
     var writer = file.writer();
@@ -118,7 +145,23 @@ pub fn normalFeatures(allocator: std.mem.Allocator, file: std.fs.File, id: u64, 
         current_size += session_id_str.len;
     }
 
+    // write the image flag if it is one
+    if (features.image_filename) |_| {
+        const label = ", kind: image";
+        try writer.writeAll(label);
+        current_size += label.len;
+    }
+
     // fill the gaps so the separator is in the same place
     try writer.writeByteNTimes(' ', wcs_size - current_size);
-    try file.writeAll(" | ");
+
+    // write the contents if it's text
+    if (features.image_filename) |filename| {
+        try file.writeAll(" # ");
+        try std.fmt.format(writer, "{s}: <binary image data>\n", .{filename});
+    } else {
+        try file.writeAll(" | ");
+        try file.writeAll(contents);
+        try file.writeAll("\n");
+    }
 }
