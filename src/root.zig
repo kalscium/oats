@@ -6,7 +6,7 @@ pub const datetime = @import("datetime");
 const std = @import("std");
 
 /// The current semantic version
-pub const version = "0.6.1";
+pub const version = "0.6.2";
 
 /// The current major version of this cli (semantic versioning)
 pub const maj_ver = blk: {
@@ -23,6 +23,13 @@ pub fn getHome(allocator: std.mem.Allocator) ![]const u8 {
     // get env map
     var env_map = try std.process.getEnvMap(allocator);
     defer env_map.deinit();
+
+    // if there is an oats home override then just return that
+    if (env_map.get("OATS_DB_PATH")) |path| {
+        const path_clone = try allocator.alloc(u8, path.len);
+        @memcpy(path_clone, path);
+        return path_clone;
+    }
 
     // get the user-home
     const user_home = env_map.get("HOME") orelse env_map.get("APPDATA") orelse return error.HomeEnvVarUnset;

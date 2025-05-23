@@ -39,7 +39,7 @@ pub fn basicLessThan(comptime T: type) fn (context: void, a: T, b: T)bool {
 pub fn pop(allocator: std.mem.Allocator, to_pop: usize) !void {
     // if database file doesn't exist throw error
     const path = try oats.getHome(allocator);
-    if (std.fs.accessAbsolute(path, .{})) {}
+    if (std.fs.cwd().access(path, .{})) {}
     else |err| {
         std.debug.print("info: no oats database found, try running 'oats wipe' to initialize a new one\n", .{});
         return err;
@@ -47,7 +47,7 @@ pub fn pop(allocator: std.mem.Allocator, to_pop: usize) !void {
 
     // open the database file
     defer allocator.free(path);
-    var file = try std.fs.openFileAbsolute(path, .{ .mode = .read_write });
+    var file = try std.fs.cwd().openFile(path, .{ .mode = .read_write });
     defer file.close();
 
     // double-check the magic sequence
@@ -91,7 +91,7 @@ pub fn pop(allocator: std.mem.Allocator, to_pop: usize) !void {
 pub fn pushImg(allocator: std.mem.Allocator, session_id: ?i64, img_paths: []const []const u8) !void {
     // if database file doesn't exist throw error
     const path = try oats.getHome(allocator);
-    if (std.fs.accessAbsolute(path, .{})) {}
+    if (std.fs.cwd().access(path, .{})) {}
     else |err| {
         std.debug.print("info: no oats database found, try running 'oats wipe' to initialize a new one\n", .{});
         return err;
@@ -99,7 +99,7 @@ pub fn pushImg(allocator: std.mem.Allocator, session_id: ?i64, img_paths: []cons
 
     // open the database file
     defer allocator.free(path);
-    var file = try std.fs.openFileAbsolute(path, .{ .mode = .read_write });
+    var file = try std.fs.cwd().openFile(path, .{ .mode = .read_write });
     defer file.close();
 
     // double-check the magic sequence
@@ -146,7 +146,7 @@ pub fn pushImg(allocator: std.mem.Allocator, session_id: ?i64, img_paths: []cons
 pub fn tail(allocator: std.mem.Allocator, to_pop: usize) !void {
     // if database file doesn't exist throw error
     const path = try oats.getHome(allocator);
-    if (std.fs.accessAbsolute(path, .{})) {}
+    if (std.fs.cwd().access(path, .{})) {}
     else |err| {
         std.debug.print("info: no oats database found, try running 'oats wipe' to initialize a new one\n", .{});
         return err;
@@ -154,7 +154,7 @@ pub fn tail(allocator: std.mem.Allocator, to_pop: usize) !void {
 
     // open the database file
     defer allocator.free(path);
-    var file = try std.fs.openFileAbsolute(path, .{ .mode = .read_write });
+    var file = try std.fs.cwd().openFile(path, .{ .mode = .read_write });
     defer file.close();
 
     // double-check the magic sequence
@@ -222,7 +222,7 @@ pub fn main() !void {
 
         // check if the file exists or not if so, then make sure the user knows
         // what they're doing
-        if (std.fs.accessAbsolute(path, .{})) |_|
+        if (std.fs.cwd().access(path, .{})) |_|
             if (args.len > 2 and std.mem.eql(u8, args[2], "--everything")) {}
             else {
                 std.debug.print("warning: pre-existing oat database detected, include the flag '--everything' after the wipe command to confirm the wipe\n", .{});
@@ -230,7 +230,7 @@ pub fn main() !void {
             }
         else |_| {}
 
-        var file = try std.fs.createFileAbsolute(path, .{});
+        var file = try std.fs.cwd().createFile(path, .{});
         var writer = file.writer();
         defer file.close();
 
@@ -248,7 +248,7 @@ pub fn main() !void {
     if (std.mem.eql(u8, args[1], "session")) {
         // if database file doesn't exist throw error
         const path = try oats.getHome(allocator);
-        if (std.fs.accessAbsolute(path, .{})) {}
+        if (std.fs.cwd().access(path, .{})) {}
         else |err| {
             std.debug.print("info: no oats database found, try running 'oats wipe' to initialize a new one\n", .{});
             return err;
@@ -256,7 +256,7 @@ pub fn main() !void {
 
         // open the database file
         defer allocator.free(path);
-        var file = try std.fs.openFileAbsolute(path, .{ .mode = .read_write });
+        var file = try std.fs.cwd().openFile(path, .{ .mode = .read_write });
         defer file.close();
 
         // double-check the magic sequence
@@ -290,7 +290,7 @@ pub fn main() !void {
 
         // if database file doesn't exist throw error
         const path = try oats.getHome(allocator);
-        if (std.fs.accessAbsolute(path, .{})) {}
+        if (std.fs.cwd().access(path, .{})) {}
         else |err| {
             std.debug.print("info: no oats database found, try running 'oats wipe' to initialize a new one\n", .{});
             return err;
@@ -298,7 +298,7 @@ pub fn main() !void {
 
         // open the database file
         defer allocator.free(path);
-        var file = try std.fs.openFileAbsolute(path, .{ .mode = .read_write });
+        var file = try std.fs.cwd().openFile(path, .{ .mode = .read_write });
         defer file.close();
 
         // double-check the magic sequence
@@ -361,7 +361,7 @@ pub fn main() !void {
     if (std.mem.eql(u8, args[1], "head")) {
         // if database file doesn't exist throw error
         const path = try oats.getHome(allocator);
-        if (std.fs.accessAbsolute(path, .{})) {}
+        if (std.fs.cwd().access(path, .{})) {}
         else |err| {
             std.debug.print("info: no oats database found, try running 'oats wipe' to initialize a new one\n", .{});
             return err;
@@ -369,7 +369,7 @@ pub fn main() !void {
 
         // open the database file
         defer allocator.free(path);
-        var file = try std.fs.openFileAbsolute(path, .{ .mode = .read_write });
+        var file = try std.fs.cwd().openFile(path, .{ .mode = .read_write });
         defer file.close();
 
         // double-check the magic sequence
@@ -420,7 +420,7 @@ pub fn main() !void {
     if (std.mem.eql(u8, args[1], "sort")) {
         // if database file doesn't exist throw error
         const path = try oats.getHome(allocator);
-        if (std.fs.accessAbsolute(path, .{})) {}
+        if (std.fs.cwd().access(path, .{})) {}
         else |err| {
             std.debug.print("info: no oats database found, try running 'oats wipe' to initialize a new one\n", .{});
             return err;
@@ -428,7 +428,7 @@ pub fn main() !void {
 
         // open the database file
         defer allocator.free(path);
-        var file = try std.fs.openFileAbsolute(path, .{ .mode = .read_write });
+        var file = try std.fs.cwd().openFile(path, .{ .mode = .read_write });
         defer file.close();
 
         // double-check the magic sequence
@@ -465,7 +465,7 @@ pub fn main() !void {
         // create a new temporary database file
         const tmp_path = try oats.getTmpHome(allocator);
         defer allocator.free(tmp_path);
-        var tmp_file = try std.fs.createFileAbsolute(tmp_path, .{});
+        var tmp_file = try std.fs.cwd().createFile(tmp_path, .{});
         defer tmp_file.close();
 
         // write the boilerplate to the tmp
@@ -492,8 +492,8 @@ pub fn main() !void {
         try tmp_file.writer().writeInt(u64, stack_ptr, .big);
 
         // replace the database with the temporary one
-        try std.fs.deleteFileAbsolute(path);
-        try std.fs.renameAbsolute(tmp_path, path);
+        try std.fs.cwd().deleteFile(path);
+        try std.fs.cwd().rename(tmp_path, path);
 
         return;
     }
@@ -508,7 +508,7 @@ pub fn main() !void {
 
         // if database file doesn't exist throw error
         const path = try oats.getHome(allocator);
-        if (std.fs.accessAbsolute(path, .{})) {}
+        if (std.fs.cwd().access(path, .{})) {}
         else |err| {
             std.debug.print("info: no oats database found, try running 'oats wipe' to initialize a new one\n", .{});
             return err;
@@ -516,7 +516,7 @@ pub fn main() !void {
 
         // open the current database file
         defer allocator.free(path);
-        var file = try std.fs.openFileAbsolute(path, .{ .mode = .read_write });
+        var file = try std.fs.cwd().openFile(path, .{ .mode = .read_write });
         defer file.close();
 
         // double-check the magic sequence
@@ -607,7 +607,7 @@ pub fn main() !void {
     if (std.mem.eql(u8, args[1], "count")) {
         // if database file doesn't exist throw error
         const path = try oats.getHome(allocator);
-        if (std.fs.accessAbsolute(path, .{})) {}
+        if (std.fs.cwd().access(path, .{})) {}
         else |err| {
             std.debug.print("info: no oats database found, try running 'oats wipe' to initialize a new one\n", .{});
             return err;
@@ -615,7 +615,7 @@ pub fn main() !void {
 
         // open the database file
         defer allocator.free(path);
-        var file = try std.fs.openFileAbsolute(path, .{ .mode = .read_write });
+        var file = try std.fs.cwd().openFile(path, .{ .mode = .read_write });
         defer file.close();
 
         // double-check the magic sequence
@@ -652,7 +652,7 @@ pub fn main() !void {
     if (std.mem.eql(u8, args[1], "raw")) {
         // if database file doesn't exist throw error
         const path = try oats.getHome(allocator);
-        if (std.fs.accessAbsolute(path, .{})) {}
+        if (std.fs.cwd().access(path, .{})) {}
         else |err| {
             std.debug.print("info: no oats database found, try running 'oats wipe' to initialize a new one\n", .{});
             return err;
@@ -660,7 +660,7 @@ pub fn main() !void {
 
         // open the read database file
         defer allocator.free(path);
-        var file = try std.fs.openFileAbsolute(path, .{ .mode = .read_write });
+        var file = try std.fs.cwd().openFile(path, .{ .mode = .read_write });
         defer file.close();
 
         // double-check the magic sequence
@@ -704,7 +704,7 @@ pub fn main() !void {
 
         // if database file doesn't exist throw error
         const path = try oats.getHome(allocator);
-        if (std.fs.accessAbsolute(path, .{})) {}
+        if (std.fs.cwd().access(path, .{})) {}
         else |err| {
             std.debug.print("info: no oats database found, try running 'oats wipe' to initialize a new one\n", .{});
             return err;
@@ -712,7 +712,7 @@ pub fn main() !void {
 
         // open the read database file
         defer allocator.free(path);
-        var file = try std.fs.openFileAbsolute(path, .{ .mode = .read_write });
+        var file = try std.fs.cwd().openFile(path, .{ .mode = .read_write });
         defer file.close();
 
         // double-check the magic sequence
