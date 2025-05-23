@@ -59,14 +59,14 @@ pub fn enableRawMode() !TerminalFlags {
         // disable Ctrl-C & Ctrl-Z signals
         raw.lflag.ISIG = false;
         // disable Ctrl-S & Ctrl-Q
-            // raw.lflag.IXON = false;
+        raw.iflag.IXON = false;
         // disable Ctrl-V & fix Ctrl-M
-        raw.lflag.IEXTEN  = false;
-            // raw.lflag.ICRNL = false;
+        raw.lflag.IEXTEN = false;
         // misc
-            // raw.lflag.BRKINT = false;
-            // raw.lflag.INPCK = false;
-            // raw.lflag.ISTRIP = false;
+        raw.iflag.BRKINT = false;
+        raw.iflag.INPCK = false;
+        raw.iflag.ICRNL = false;
+        raw.iflag.ISTRIP = false;
         raw.cflag.CSTOPB = true;
 
         // set the attrs and return original
@@ -322,7 +322,7 @@ pub fn readLine(allocator: std.mem.Allocator, comptime prompt_len: usize, prompt
         }
 
         // check for enter (newline)
-        if (char == '\n') break;
+        if (char == '\n' or char == '\r') break;
 
         // otherwise treat it like a normal character
 
@@ -370,7 +370,7 @@ pub fn readLine(allocator: std.mem.Allocator, comptime prompt_len: usize, prompt
             if (cleanup_jump != 0) // only jump if the cursor isn't already on the last line
                 try std.fmt.format(stdout, "\x1B[{}B", .{cleanup_jump});
         }
-        if (line.items.len % coloumns != 0 or line.items.len == 0) try stdout.writeByte('\n');
+        if (line.items.len % coloumns != 0) try stdout.writeByte('\n');
         try std.fmt.format(stdout, "\x1B[{}G", .{prompt_len * 0});
     }
 
@@ -397,6 +397,9 @@ pub fn readCommand(allocator: std.mem.Allocator, sess_id: *i64) !void {
     // keep track of free lines to write to
     var free_lines: usize = 0;
 
+    // whether to clear the line or not
+    var clear_line: bool = false;
+
     // keep reading until EOF or new-line
     while (std.io.getStdIn().reader().readByte()) |char| {
         // check for CTRL+D (exit)
@@ -404,15 +407,13 @@ pub fn readCommand(allocator: std.mem.Allocator, sess_id: *i64) !void {
 
         // check for CTRL+C (clear)
         if (char == 3) {
-            line.deinit();
-            line = @TypeOf(line).init(allocator);
+            clear_line = true;
             break;
         }
 
         // check for ESC
         if (char == 27) {
-            line.deinit();
-            line = @TypeOf(line).init(allocator);
+            clear_line = true;
             break;
         }
 
@@ -443,7 +444,7 @@ pub fn readCommand(allocator: std.mem.Allocator, sess_id: *i64) !void {
         }
 
         // check for enter (newline)
-        if (char == '\n') break;
+        if (char == '\r' or char == '\r') break;
 
         // otherwise treat it like a normal character
 
@@ -464,7 +465,23 @@ pub fn readCommand(allocator: std.mem.Allocator, sess_id: *i64) !void {
     } else |_| {}
 
     // slight cleanup beforehand
-    try stdout.writeAll("\x1B[0G\x1B[2K"); // wipe line and go to start of line
+    const lines = line.items.len / coloumns;
+    if (lines > 0) { // only jump if the cursor is not already on the first line
+        const cleanup_jump = (cursor - 1) / coloumns;
+        try std.fmt.format(stdout, "\x1B[?25l\x1B[{}A", .{cleanup_jump}); // hide the line and jump
+
+        // wipe all the lines after it and go back to the first line
+        try stdout.writeBytesNTimes("\x1B[1B\x1B[2K", lines);
+        try std.fmt.format(stdout, "\x1B[{}A", .{lines});
+    }
+    // clear the line and go to the start of it before unhiding the cursor
+    try stdout.writeAll("\x1B[?25h\x1B[2K\x1B[0G");
+
+    // clear line if line needs clearing
+    if (clear_line) {
+        line.deinit();
+        line = @TypeOf(line).init(allocator);
+    }
 
     // check for no command
     if (line.items.len == 0) return;
