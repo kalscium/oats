@@ -2,6 +2,7 @@ pub const session = @import("session.zig");
 
 const std = @import("std");
 const oats = @import("oats");
+const options = @import("options");
 
 /// Finds the location of an item in a slice, returns null if not present
 pub fn binarySearch(item: anytype, slice: []const @TypeOf(item)) ?usize {
@@ -128,6 +129,7 @@ pub fn pushImg(allocator: std.mem.Allocator, session_id: ?i64, img_paths: []cons
             .timestamp = time,
             .session_id = session_id,
             .image_filename = path_iter.first(),
+            .is_mobile = if (options.is_mobile) {} else null,
         };
         const item = try oats.item.pack(allocator, @bitCast(time), features, image);
         defer allocator.free(item);
@@ -315,7 +317,11 @@ pub fn main() !void {
 
         // get the time & construct the stack item
         const time = std.time.milliTimestamp();
-        const features: oats.item.Features = .{ .timestamp = time, .session_id = null };
+        const features: oats.item.Features = .{
+            .timestamp = time,
+            .session_id = null,
+            .is_mobile = if (options.is_mobile) {} else null,
+        };
         const item = try oats.item.pack(allocator, @bitCast(time), features, args[2]);
         defer allocator.free(item);
 

@@ -66,7 +66,10 @@ pub fn markdownHeader(writer: anytype, tz_offset: i16, features: item.Features, 
             else if (date.date.day % 10 == 2 and date.date.day != 12) "nd"
             else if (date.date.day % 10 == 3 and date.date.day != 13) "rd"
             else "th";
-        try std.fmt.format(writer, "\n## {s}, {}{s} of {s} {} `{:0>2}:{:0>2} {s}`\n", .{
+
+        try writer.writeByte('\n');
+        if (!new_col) try writer.writeByte('#');
+        try std.fmt.format(writer, "## {s}, {}{s} of {s} {} `{:0>2}:{:0>2} {s}`", .{
             weekday,
             date.date.day,
             day_suffix,
@@ -76,14 +79,18 @@ pub fn markdownHeader(writer: anytype, tz_offset: i16, features: item.Features, 
             date.time.minute,
             date.time.amOrPm(),
         });
+        if (features.is_mobile) |_| try writer.writeAll(" *(on mobile)*");
+        try writer.writeByte('\n');
     } else if (prev_features.timestamp == null or new_col or datetime.Datetime.fromTimestamp(features.timestamp.? - prev_features.timestamp.?).toSeconds()/60 > title_time_threshold) {
         try writer.writeByte('\n');
         if (!new_col) try writer.writeByte('#');
-        try std.fmt.format(writer, "## `{:0>2}:{:0>2} {s}`\n", .{
+        try std.fmt.format(writer, "## `{:0>2}:{:0>2} {s}`", .{
             convert24to12(date.time.hour),
             date.time.minute,
             date.time.amOrPm(),
         });
+        if (features.is_mobile) |_| try writer.writeAll(" *(on mobile)*");
+        try writer.writeByte('\n');
     }
 }
 
@@ -104,12 +111,13 @@ pub fn normal(allocator: std.mem.Allocator, file: std.fs.File, id: u64, features
         const date_label = ", date: ".len;
         const session_id_label = ", sess_id: ".len;
         const img_col_id_label = ", kind: image".len;
+        const mobile_label = ", on: mobile".len;
 
         // features
         const date = 25; // iso-8601 date size
         const session_id = @as(comptime_int, @intFromFloat(@floor(@log10(@as(comptime_float, @floatFromInt(std.math.maxInt(i64))))))) + 2;
         
-        break :blk largest_id + id_label + date_label + session_id_label + img_col_id_label + date + session_id;
+        break :blk largest_id + id_label + date_label + session_id_label + img_col_id_label + mobile_label + date + session_id;
     };
 
     var writer = file.writer();
@@ -148,6 +156,13 @@ pub fn normal(allocator: std.mem.Allocator, file: std.fs.File, id: u64, features
     // write the image flag if it is one
     if (features.image_filename) |_| {
         const label = ", kind: image";
+        try writer.writeAll(label);
+        current_size += label.len;
+    }
+
+    // write the mobile label if there is one
+    if (features.is_mobile) |_| {
+        const label = ", on: mobile";
         try writer.writeAll(label);
         current_size += label.len;
     }

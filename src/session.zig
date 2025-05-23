@@ -576,6 +576,7 @@ pub fn session(allocator: std.mem.Allocator, file: std.fs.File, isession_id: i64
         const item = try oats.item.pack(allocator, @bitCast(timestamp), .{
             .timestamp = timestamp,
             .session_id = session_id,
+            .is_mobile = if (@import("options").is_mobile) {} else null,
         }, line.items);
         defer allocator.free(item);
 

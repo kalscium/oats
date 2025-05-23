@@ -15,6 +15,13 @@ pub fn build(b: *std.Build) void {
     // set a preferred release mode, allowing the user to decide how to optimize.
     const optimize = b.standardOptimizeOption(.{});
 
+    // program specific options
+    const is_mobile = b.option(bool, "mobile", "Sets whether the target is a mobile device");
+
+    // options set
+    var options = b.addOptions();
+    options.addOption(bool, "is_mobile", is_mobile orelse false);
+    
     const lib = b.addStaticLibrary(.{
         .name = "oats",
         // In this case the main source file is merely a path, however, in more
@@ -41,6 +48,10 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
+
+    // add options
+    lib.root_module.addOptions("options", options);
+    exe.root_module.addOptions("options", options);
 
     // add imports
     lib.root_module.addImport("datetime", datetime.module("zig-datetime"));

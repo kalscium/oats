@@ -10,8 +10,9 @@ pub const FeaturesBitfield = packed struct(u8) {
     has_timestamp: bool,
     has_session_id: bool,
     is_image: bool,
+    is_mobile: bool,
 
-    _padding: u4 = 0,
+    _padding: u3 = 0,
 };
 
 /// General metadata of a stack item (for reading) so you don't have to keep
@@ -44,6 +45,8 @@ pub const Features = struct {
     session_id: ?i64 = null,
     /// The image filename
     image_filename: ?[]const u8 = null,
+    /// If it was written on mobile or not
+    is_mobile: ?void = null,
 };
 
 /// Calculates the size based upon the features enabled
@@ -74,6 +77,7 @@ pub fn featuresToBitfield(features: Features) FeaturesBitfield {
         .has_timestamp = features.timestamp != null,
         .has_session_id = features.session_id != null,
         .is_image = features.image_filename != null,
+        .is_mobile = features.is_mobile != null,
     };
 }
 
@@ -164,6 +168,9 @@ pub fn unpack(allocator: std.mem.Allocator, start_idx: usize, item: []const u8) 
         offset += fn_len;
         features.image_filename = filename;
     }
+
+    // mobile flag
+    features.is_mobile = if (features_bitfield.is_mobile) {} else null;
 
     return .{
         .id = id,
