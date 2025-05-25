@@ -287,6 +287,33 @@ pub fn readLine(allocator: std.mem.Allocator, comptime prompt_len: usize, prompt
             continue;
         }
 
+        // check for the vim-like ESC+I (to go to the start of the line)
+        if (escape and char == 'I') {
+            escape = false;
+
+            try std.fmt.format(stdout, "\x1B[{}G", .{prompt_len+1});
+            if (cursor / coloumns > 0)
+                try std.fmt.format(stdout, "\x1B[{}A", .{cursor / coloumns});
+
+            cursor = 0;
+
+            continue;
+        }
+
+        // check for the vim-like ESC+A (to go to the end of the line)
+        if (escape and char == 'A') {
+            escape = false;
+
+            try std.fmt.format(stdout, "\x1B[{}G", .{line.items.len % coloumns + prompt_len + 1});
+            const diff = line.items.len / coloumns - cursor / coloumns;
+            if (diff > 0)
+                try std.fmt.format(stdout, "\x1B[{}B", .{diff});
+
+            cursor = line.items.len;
+
+            continue;
+        }
+
         // if there is an invalid escape code, forget about it
         if (escape) {
             // note how this isn't reached when there is an arrow
