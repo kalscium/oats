@@ -11,8 +11,9 @@ pub const FeaturesBitfield = packed struct(u8) {
     has_session_id: bool,
     is_image: bool,
     is_mobile: bool,
+    is_void: bool,
 
-    _padding: u3 = 0,
+    _padding: u2 = 0,
 };
 
 /// General metadata of a stack item (for reading) so you don't have to keep
@@ -47,6 +48,8 @@ pub const Features = struct {
     image_filename: ?[]const u8 = null,
     /// If it was written on mobile or not
     is_mobile: ?void = null,
+    /// If the item is trimmed (shallow copy) (no contents)
+    is_void: ?void = null,
 };
 
 /// Calculates the size based upon the features enabled
@@ -78,6 +81,7 @@ pub fn featuresToBitfield(features: Features) FeaturesBitfield {
         .has_session_id = features.session_id != null,
         .is_image = features.image_filename != null,
         .is_mobile = features.is_mobile != null,
+        .is_void = features.is_void != null,
     };
 }
 

@@ -806,6 +806,16 @@ pub fn main() !void {
                 try oats.format.markdownHeader(buffered.writer(), tz_offset, item.features, prev_features, i == 0);
                 defer prev_features = item.features;
 
+                // if it's a trimmed item, then count them and write it
+                if (item.features.is_void != null) {
+                    const start = i;
+                    while (collection.items[i].features.is_void) |_|
+                        i += 1;
+                    const items = i - start;
+                    try std.fmt.format(buffered.writer(), "*{} Trimmed Items*\n", .{items});
+                    continue;
+                }
+
                 // if it's simply a text item, then read the contents and write it
                 if (item.features.image_filename == null) {
                     const contents = try allocator.alloc(u8, item.size - item.contents_offset);
