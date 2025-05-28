@@ -45,10 +45,11 @@ pub fn getTmpHome(allocator: std.mem.Allocator) ![]const u8 {
     var env_map = try std.process.getEnvMap(allocator);
     defer env_map.deinit();
 
-    // get the user-home
-    const user_home = env_map.get("HOME") orelse return error.HomeEnvVarUnset;
+    // get the oats home
+    const home = try getHome(allocator);
+    defer allocator.free(home);
 
-    // construct and allocate the napkin home
-    const home = try std.fmt.allocPrint(allocator, "{s}/.tmp.oats", .{user_home});
-    return home;
+    // construct and allocate the tmp home
+    const tmp_home = try std.fmt.allocPrint(allocator, "{s}.tmp.oats", .{home});
+    return tmp_home;
 }

@@ -176,6 +176,9 @@ pub fn unpack(allocator: std.mem.Allocator, start_idx: usize, item: []const u8) 
     // mobile flag
     features.is_mobile = if (features_bitfield.is_mobile) {} else null;
 
+    // is_void flag
+    features.is_void = if (features_bitfield.is_void) {} else null;
+
     return .{
         .id = id,
         .features = features,
