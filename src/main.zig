@@ -882,6 +882,91 @@ pub fn main() !void {
         return;
     }
 
+    // checks for the 'filter' command
+    if (std.mem.eql(u8, args[1], "filter")) {
+        // check for the arg
+        if (args.len < 3) {
+            printHelp();
+            return error.ExpectedArgument;
+        }
+
+        // if database file doesn't exist throw error
+        const path = try oats.getHome(allocator);
+        if (std.fs.cwd().access(path, .{})) {}
+        else |err| {
+            std.debug.print("info: no oats database found, try running 'oats wipe' to initialize a new one\n", .{});
+            return err;
+        }
+
+        const ifile = try openOatsDB(path);
+        defer ifile.close();
+
+        // get the stack ptr
+        try ifile.seekTo(oats.stack.stack_ptr_loc);
+        const istack_ptr = try ifile.reader().readInt(u64, .big);
+
+        // read ptr instead of stack ptr (read from start)
+        var read_ptr: u64 = oats.stack.stack_start_loc;
+
+        // create the output file (path is the last arg)
+        var ofile = try std.fs.cwd().createFile(args[args.len-1], .{});
+        var writer = ofile.writer();
+        defer ofile.close();
+
+        // write the magic sequence
+        try ofile.writeAll(oats.magic_seq);
+
+        // write the major version and stack ptr
+        try writer.writeInt(u8, oats.maj_ver, .big);
+        try writer.writeInt(u64, oats.stack.stack_start_loc, .big);
+
+        var ostack_ptr: u64 = oats.stack.stack_start_loc;
+
+        // iterate through the oats items and trim them based upon their features
+        read_items: while (read_ptr != istack_ptr) {
+            // read the item
+            const start_idx = read_ptr + @sizeOf(u32);
+            const raw_item = try oats.stack.readStackEntry(allocator, ifile, &read_ptr);
+            defer allocator.free(raw_item);
+            const item = try oats.item.unpack(allocator, start_idx, raw_item);
+
+            const item_features_bitfield = oats.item.featuresToBitfield(item.features);
+
+            // comptime attribute filtering
+            // ugly & inefficient, but works
+            for (args[2..args.len-1]) |attr| {
+                inline for (@typeInfo(oats.item.FeaturesBitfield).Struct.fields) |field|{
+                    if (comptime field.type == bool)
+                    if (std.mem.eql(u8, field.name, attr)) {
+                        // check if the item should be trimmed
+                        if (!@field(item_features_bitfield, field.name)) {
+                            // copy the item's features and push stubbed version
+                            var features = item.features;
+                            features.is_void = {};
+                            const stubbed = try oats.item.pack(allocator, item.id, features, &.{});
+
+                            try oats.stack.push(ofile, &ostack_ptr, stubbed);
+
+                            continue :read_items;
+                        }
+                        break;
+                    };
+                } else {
+                    return error.AttributeNotFound;
+                }
+            }
+
+            // only reaches here if the item shouldn't be trimmed
+            try oats.stack.push(ofile, &ostack_ptr, raw_item);
+        }
+
+        // update stack ptr
+        try ofile.seekTo(oats.stack.stack_ptr_loc);
+        try writer.writeInt(u64, ostack_ptr, .big);
+
+        return;
+    }
+
     // only occurs when there is an invalid command
     printHelp();
     return error.CommandNotFound;
@@ -892,22 +977,23 @@ fn printHelp() void {
     const help =
         \\Usage: oats [command]
         \\Commands:
-        \\    session <?sess_id>     | starts an interactive session that pushes thoughts/notes to the stack from stdin with the specificed session id (defaults to current timestamp)
-        \\    push <text>            | push a singular thought/note to the oats stack
-        \\    push-img <*paths>      | pushs images to the oats stack
-        \\    pop  <?n>              | pops <n> (defaults to 1) items off the stack (removes it)
-        \\    tail <?n>              | prints the last <n> (defaults to 1) stack items (thoughts/notes)
-        \\    head <?n>              | prints the first <n> (defaults to 1) stack items (thoughts/notes)
-        \\    count                  | counts the amount of items on the stack and prints it to stdout
-        \\    sort                   | sorts the contents of the oats database based on id
-        \\    markdown <tz> <?media> | pretty-prints the items on the stack in the markdown format, provided with a timezone offset and a path to put media (images & videos) (discarded if not provided)
-        \\    raw                    | writes the raw contents of the database to stdout (pipe to a file for backups)
-    	\\    import <path>          | reads the raw contents of a database (backup) from the path provided and combines it with the current database
-    	\\    trim <?*attrs> <path>  | copies a trimmed version (without items with <attrs> attributes) of the database to <path>
-        \\    wipe                   | wipes all the contents of the stack and creates a new one
+        \\    session <?sess_id>      | starts an interactive session that pushes thoughts/notes to the stack from stdin with the specificed session id (defaults to current timestamp)
+        \\    push <text>             | push a singular thought/note to the oats stack
+        \\    push-img <*paths>       | pushs images to the oats stack
+        \\    pop  <?n>               | pops <n> (defaults to 1) items off the stack (removes it)
+        \\    tail <?n>               | prints the last <n> (defaults to 1) stack items (thoughts/notes)
+        \\    head <?n>               | prints the first <n> (defaults to 1) stack items (thoughts/notes)
+        \\    count                   | counts the amount of items on the stack and prints it to stdout
+        \\    sort                    | sorts the contents of the oats database based on id
+        \\    markdown <tz> <?media>  | pretty-prints the items on the stack in the markdown format, provided with a timezone offset and a path to put media (images & videos) (discarded if not provided)
+        \\    raw                     | writes the raw contents of the database to stdout (pipe to a file for backups)
+    	\\    import <path>           | reads the raw contents of a database (backup) from the path provided and combines it with the current database
+    	\\    trim <?*attrs> <path>   | copies a trimmed version (without items with <attrs> attributes) of the database to <path>
+    	\\    filter <?*attrs> <path> | copies a filtered version (only with items with <attrs> attributes) of the database to <path>
+        \\    wipe                    | wipes all the contents of the stack and creates a new one
         \\Options:
-        \\    -h, --help             | prints this help message
-        \\    -V, --version          | prints the version
+        \\    -h, --help              | prints this help message
+        \\    -V, --version           | prints the version
         \\
     ;
     std.debug.print(help, .{});
