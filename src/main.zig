@@ -548,12 +548,13 @@ pub fn main() !void {
             // make sure there are no duplicates
 
             // first check if the id is even within the already established 'bounds'
-            if (items.items.len == 0 or item.id < items.items[0].id or item.id > items.items[items.items.len-1].id) {}
-            
-            // check if the id is present already, and if it's a void or not
-            const is_found, const found = binarySearch(u64, item, items.items, struct{ fn f(x: oats.item.Metadata) u64 { return x.id; } }.f);
-            if (is_found and items.items[found].features.is_void != null) // only import if the pre-existing item is void
+            if (items.items.len != 0 and item.id >= items.items[0].id and item.id <= items.items[items.items.len-1].id) {
+                // check if the id is present already, and if it's a void or not
+                const is_found, const found = binarySearch(u64, item, items.items, struct{ fn f(x: oats.item.Metadata) u64 { return x.id; } }.f);
+                // don't import if the item already exists and the existing item isn't stubbed or the imported item is void
+                if (is_found and (items.items[found].features.is_void == null or item.features.is_void == {}))
                     continue;
+            }
 
             // write the item to the stack
             try oats.stack.push(file, &stack_ptr, raw_item);
