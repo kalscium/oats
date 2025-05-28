@@ -4,6 +4,22 @@ const std = @import("std");
 const oats = @import("oats");
 const options = @import("options");
 
+test binarySearch {
+    // test binary searching something that exists
+    const slice: []const u8 = &.{ 2, 4, 8, 16, 32 };
+
+    var item: u8 = 4;
+    var found, var loc = binarySearch(u8, item, slice, struct{ fn f(x: u8) u8 { return x; } }.f);
+    std.debug.assert(found);
+    std.debug.assert(loc == 1);
+
+    // test binary searching something that doesn't exist
+    item = 13;
+    found, loc = binarySearch(u8, item, slice, struct{ fn f(x: u8) u8 { return x; } }.f);
+    std.debug.assert(!found);
+    std.debug.assert(loc == 3);
+}
+
 /// Finds the location of an item in a sorted slice, otherwise where it should be
 pub fn binarySearch(comptime num_type: type, item: anytype, slice: []const @TypeOf(item), comptime f: fn(@TypeOf(item)) num_type) struct{bool, usize} {
     var low: usize = 0;
@@ -35,11 +51,6 @@ pub fn basicLessThan(comptime T: type) fn (context: void, a: T, b: T)bool {
             return a < b;
         }
     }.call;
-}
-
-pub fn lessThanItemID(context: void, a: oats.item.Metadata, b: oats.item.Metadata) bool {
-    _ = context;
-    return a.id < b.id;
 }
 
 /// Opens and checks an oats database
@@ -505,7 +516,7 @@ pub fn main() !void {
             try items.append(item);
         }
         // sort the ids (for binary search)
-        std.mem.sortUnstable(oats.item.Metadata, items.items, {}, lessThanItemID);
+        std.mem.sortUnstable(oats.item.Metadata, items.items, {}, oats.item.Metadata.idLessThan);
 
         // read the contents of the database to import
 
