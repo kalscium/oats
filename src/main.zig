@@ -37,6 +37,23 @@ pub fn basicLessThan(comptime T: type) fn (context: void, a: T, b: T)bool {
     }.call;
 }
 
+/// Opens and checks an oats database
+pub fn openOatsDB(path: []const u8) !std.fs.File {
+    // open the read database file
+    var file = try std.fs.cwd().openFile(path, .{ .mode = .read_write });
+
+    // double check the magic sequence
+    var magic: [oats.magic_seq.len]u8 = undefined;
+    _ = try file.readAll(&magic);
+    if (!std.mem.eql(u8, &magic, oats.magic_seq)) return error.MagicMismatch;
+
+    // make sure it's of the right major version
+    const maj_ver = try file.reader().readInt(u8, .big);
+    if (maj_ver != oats.maj_ver) return error.MajVersionMismatch;
+
+    return file;
+}
+
 pub fn pop(allocator: std.mem.Allocator, to_pop: usize) !void {
     // if database file doesn't exist throw error
     const path = try oats.getHome(allocator);
@@ -46,19 +63,8 @@ pub fn pop(allocator: std.mem.Allocator, to_pop: usize) !void {
         return err;
     }
 
-    // open the database file
-    defer allocator.free(path);
-    var file = try std.fs.cwd().openFile(path, .{ .mode = .read_write });
+    const file = try openOatsDB(path);
     defer file.close();
-
-    // double-check the magic sequence
-    var magic: [oats.magic_seq.len]u8 = undefined;
-    _ = try file.readAll(&magic);
-    if (!std.mem.eql(u8, &magic, oats.magic_seq)) return error.MagicMismatch;
-
-    // make sure it's of the right major version
-    const maj_ver = try file.reader().readInt(u8, .big);
-    if (maj_ver != oats.maj_ver) return error.MajVersionMismatch;
 
     // get the stack ptr
     var stack_ptr = try file.reader().readInt(u64, .big);
@@ -98,19 +104,8 @@ pub fn pushImg(allocator: std.mem.Allocator, session_id: ?i64, img_paths: []cons
         return err;
     }
 
-    // open the database file
-    defer allocator.free(path);
-    var file = try std.fs.cwd().openFile(path, .{ .mode = .read_write });
+    const file = try openOatsDB(path);
     defer file.close();
-
-    // double-check the magic sequence
-    var magic: [oats.magic_seq.len]u8 = undefined;
-    _ = try file.readAll(&magic);
-    if (!std.mem.eql(u8, &magic, oats.magic_seq)) return error.MagicMismatch;
-
-    // make sure it's of the right major version
-    const maj_ver = try file.reader().readInt(u8, .big);
-    if (maj_ver != oats.maj_ver) return error.MajVersionMismatch;
 
     // get the stack ptr
     var stack_ptr = try file.reader().readInt(u64, .big);
@@ -154,19 +149,8 @@ pub fn tail(allocator: std.mem.Allocator, to_pop: usize) !void {
         return err;
     }
 
-    // open the database file
-    defer allocator.free(path);
-    var file = try std.fs.cwd().openFile(path, .{ .mode = .read_write });
+    const file = try openOatsDB(path);
     defer file.close();
-
-    // double-check the magic sequence
-    var magic: [oats.magic_seq.len]u8 = undefined;
-    _ = try file.readAll(&magic);
-    if (!std.mem.eql(u8, &magic, oats.magic_seq)) return error.MagicMismatch;
-
-    // make sure it's of the right major version
-    const maj_ver = try file.reader().readInt(u8, .big);
-    if (maj_ver != oats.maj_ver) return error.MajVersionMismatch;
 
     // get the stack ptr
     var stack_ptr = try file.reader().readInt(u64, .big);
@@ -256,19 +240,8 @@ pub fn main() !void {
             return err;
         }
 
-        // open the database file
-        defer allocator.free(path);
-        var file = try std.fs.cwd().openFile(path, .{ .mode = .read_write });
+        const file = try openOatsDB(path);
         defer file.close();
-
-        // double-check the magic sequence
-        var magic: [oats.magic_seq.len]u8 = undefined;
-        _ = try file.readAll(&magic);
-        if (!std.mem.eql(u8, &magic, oats.magic_seq)) return error.MagicMismatch;
-
-        // make sure it's of the right major version
-        const maj_ver = try file.reader().readInt(u8, .big);
-        if (maj_ver != oats.maj_ver) return error.MajVersionMismatch;
 
         // get the session id
         const session_id = if (args.len >= 3)
@@ -298,19 +271,8 @@ pub fn main() !void {
             return err;
         }
 
-        // open the database file
-        defer allocator.free(path);
-        var file = try std.fs.cwd().openFile(path, .{ .mode = .read_write });
+        const file = try openOatsDB(path);
         defer file.close();
-
-        // double-check the magic sequence
-        var magic: [oats.magic_seq.len]u8 = undefined;
-        _ = try file.readAll(&magic);
-        if (!std.mem.eql(u8, &magic, oats.magic_seq)) return error.MagicMismatch;
-
-        // make sure it's of the right major version
-        const maj_ver = try file.reader().readInt(u8, .big);
-        if (maj_ver != oats.maj_ver) return error.MajVersionMismatch;
 
         // get the stack ptr
         var stack_ptr = try file.reader().readInt(u64, .big);
@@ -373,19 +335,8 @@ pub fn main() !void {
             return err;
         }
 
-        // open the database file
-        defer allocator.free(path);
-        var file = try std.fs.cwd().openFile(path, .{ .mode = .read_write });
+        const file = try openOatsDB(path);
         defer file.close();
-
-        // double-check the magic sequence
-        var magic: [oats.magic_seq.len]u8 = undefined;
-        _ = try file.readAll(&magic);
-        if (!std.mem.eql(u8, &magic, oats.magic_seq)) return error.MagicMismatch;
-
-        // make sure it's of the right major version
-        const maj_ver = try file.reader().readInt(u8, .big);
-        if (maj_ver != oats.maj_ver) return error.MajVersionMismatch;
 
         // get the stack ptr
         try file.seekTo(oats.stack.stack_ptr_loc);
@@ -432,19 +383,8 @@ pub fn main() !void {
             return err;
         }
 
-        // open the database file
-        defer allocator.free(path);
-        var file = try std.fs.cwd().openFile(path, .{ .mode = .read_write });
+        const file = try openOatsDB(path);
         defer file.close();
-
-        // double-check the magic sequence
-        var magic: [oats.magic_seq.len]u8 = undefined;
-        _ = try file.readAll(&magic);
-        if (!std.mem.eql(u8, &magic, oats.magic_seq)) return error.MagicMismatch;
-
-        // make sure it's of the right major version
-        const maj_ver = try file.reader().readInt(u8, .big);
-        if (maj_ver != oats.maj_ver) return error.MajVersionMismatch;
 
         // get the stack ptr
         try file.seekTo(oats.stack.stack_ptr_loc);
@@ -520,19 +460,8 @@ pub fn main() !void {
             return err;
         }
 
-        // open the current database file
-        defer allocator.free(path);
-        var file = try std.fs.cwd().openFile(path, .{ .mode = .read_write });
+        const file = try openOatsDB(path);
         defer file.close();
-
-        // double-check the magic sequence
-        var magic: [oats.magic_seq.len]u8 = undefined;
-        _ = try file.readAll(&magic);
-        if (!std.mem.eql(u8, &magic, oats.magic_seq)) return error.MagicMismatch;
-
-        // make sure it's of the right major version
-        const maj_ver = try file.reader().readInt(u8, .big);
-        if (maj_ver != oats.maj_ver) return error.MajVersionMismatch;
 
         // get the stack ptr
         try file.seekTo(oats.stack.stack_ptr_loc);
@@ -558,18 +487,14 @@ pub fn main() !void {
         // read the contents of the database to import
 
         // if database file doesn't exist throw error
-        var ifile = std.fs.cwd().openFile(args[2], .{}) catch |err| {
+        if (std.fs.cwd().access(args[2], .{})) {}
+        else |err| {
             std.debug.print("info: error while importing database\n", .{});
             return err;
-        };
+        }
 
-        // double-check the magic sequence
-        _ = try ifile.readAll(&magic);
-        if (!std.mem.eql(u8, &magic, oats.magic_seq)) return error.MagicMismatch;
-
-        // make sure it's of the right major version
-        const imaj_ver = try ifile.reader().readInt(u8, .big);
-        if (imaj_ver != oats.maj_ver) return error.MajVersionMismatch;
+        const ifile = try openOatsDB(args[2]);
+        defer ifile.close();
 
         // get the stack ptr
         try ifile.seekTo(oats.stack.stack_ptr_loc);
@@ -619,19 +544,8 @@ pub fn main() !void {
             return err;
         }
 
-        // open the database file
-        defer allocator.free(path);
-        var file = try std.fs.cwd().openFile(path, .{ .mode = .read_write });
+        const file = try openOatsDB(path);
         defer file.close();
-
-        // double-check the magic sequence
-        var magic: [oats.magic_seq.len]u8 = undefined;
-        _ = try file.readAll(&magic);
-        if (!std.mem.eql(u8, &magic, oats.magic_seq)) return error.MagicMismatch;
-
-        // make sure it's of the right major version
-        const maj_ver = try file.reader().readInt(u8, .big);
-        if (maj_ver != oats.maj_ver) return error.MajVersionMismatch;
 
         // get the stack ptr
         try file.seekTo(oats.stack.stack_ptr_loc);
@@ -664,19 +578,8 @@ pub fn main() !void {
             return err;
         }
 
-        // open the read database file
-        defer allocator.free(path);
-        var file = try std.fs.cwd().openFile(path, .{ .mode = .read_write });
+        const file = try openOatsDB(path);
         defer file.close();
-
-        // double-check the magic sequence
-        var magic: [oats.magic_seq.len]u8 = undefined;
-        _ = try file.readAll(&magic);
-        if (!std.mem.eql(u8, &magic, oats.magic_seq)) return error.MagicMismatch;
-
-        // make sure it's of the right major version
-        const maj_ver = try file.reader().readInt(u8, .big);
-        if (maj_ver != oats.maj_ver) return error.MajVersionMismatch;
 
         // get the stack ptr
         const stack_ptr = try file.reader().readInt(u64, .big);
@@ -716,19 +619,8 @@ pub fn main() !void {
             return err;
         }
 
-        // open the read database file
-        defer allocator.free(path);
-        var file = try std.fs.cwd().openFile(path, .{ .mode = .read_write });
+        const file = try openOatsDB(path);
         defer file.close();
-
-        // double-check the magic sequence
-        var magic: [oats.magic_seq.len]u8 = undefined;
-        _ = try file.readAll(&magic);
-        if (!std.mem.eql(u8, &magic, oats.magic_seq)) return error.MagicMismatch;
-
-        // make sure it's of the right major version
-        const maj_ver = try file.reader().readInt(u8, .big);
-        if (maj_ver != oats.maj_ver) return error.MajVersionMismatch;
 
         // get the stack ptr and create the read ptr
         const stack_ptr = try file.reader().readInt(u64, .big);
