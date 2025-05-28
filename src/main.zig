@@ -4,8 +4,8 @@ const std = @import("std");
 const oats = @import("oats");
 const options = @import("options");
 
-/// Finds the location of an item in a slice, returns null if not present
-pub fn binarySearch(item: anytype, slice: []const @TypeOf(item)) ?usize {
+/// Finds the location of an item in a sorted slice, otherwise where it should be
+pub fn binarySearch(comptime num_type: type, item: anytype, slice: []const @TypeOf(item), comptime f: fn(@TypeOf(item)) num_type) struct{bool, usize} {
     var low: usize = 0;
     var high: usize = slice.len - 1;
 
@@ -13,11 +13,11 @@ pub fn binarySearch(item: anytype, slice: []const @TypeOf(item)) ?usize {
         const mid = low + (high - low) / 2;
 
         // check if x is present at mid
-        if (slice[mid] == item)
-            return mid;
+        if (f(slice[mid]) == f(item))
+            return .{true, mid};
 
         // if x greater, ignore left half
-        if (slice[mid] < item)
+        if (f(slice[mid]) < f(item))
             low = mid + 1
         // if x lesser, ignore right half
         else
@@ -25,7 +25,7 @@ pub fn binarySearch(item: anytype, slice: []const @TypeOf(item)) ?usize {
     }
 
     // if this is reached, then item is not present
-    return null;
+    return .{false, low}; // giant assumption that this will be the correct spot to insert to
 }
 
 pub fn basicLessThan(comptime T: type) fn (context: void, a: T, b: T)bool {
@@ -35,6 +35,11 @@ pub fn basicLessThan(comptime T: type) fn (context: void, a: T, b: T)bool {
             return a < b;
         }
     }.call;
+}
+
+pub fn lessThanItemID(context: void, a: oats.item.Metadata, b: oats.item.Metadata) bool {
+    _ = context;
+    return a.id < b.id;
 }
 
 /// Opens and checks an oats database
@@ -393,20 +398,38 @@ pub fn main() !void {
         // read ptr instead of stack ptr (read from start)
         var read_ptr: u64 = oats.stack.stack_start_loc;
 
-        // store the metadata of all the stack items in an arraylist
+        // store the metadata of the stack items into a void arraylist
+        // and a non-void arraylist
         var items = std.ArrayList(oats.item.Metadata).init(allocator);
         defer items.deinit();
+        var void_items = std.ArrayList(oats.item.Metadata).init(allocator);
+        defer void_items.deinit();
+
         while (read_ptr != stack_ptr) {
             // read the next item and decode it
             const start_idx = read_ptr + @sizeOf(u32);
             const raw_item = try oats.stack.readStackEntry(allocator, file, &read_ptr);
             defer allocator.free(raw_item);
             const item = try oats.item.unpack(allocator, start_idx, raw_item);
-            try items.append(item);
+
+            if (item.features.is_void == null) try items.append(item)
+            else try void_items.append(item);
         }
 
         // sort the items
         std.mem.sortUnstable(std.meta.Elem(@TypeOf(items.items)), items.items, {}, oats.item.Metadata.idLessThan);
+
+        // only insert the void items, if they don't already exist
+        for (void_items.items) |item| {
+            const exists, const pre_loc = binarySearch(u64, item, items.items, struct{
+                fn f(metadata: oats.item.Metadata) u64 {
+                    return metadata.id;
+                }
+            }.f);
+
+            if (!exists)
+                try items.insert(pre_loc, item);
+        }
 
         // create a new temporary database file
         const tmp_path = try oats.getTmpHome(allocator);
@@ -470,19 +493,19 @@ pub fn main() !void {
         // read ptr instead of stack ptr (read from start)
         var read_ptr: u64 = oats.stack.stack_start_loc;
 
-        // store the ids of the items in the stack in an arraylist to check later (cache locality)
-        var items = std.ArrayList(u64).init(allocator);
+        // store the items in the stack in an arraylist to check later (cache locality)
+        var items = std.ArrayList(oats.item.Metadata).init(allocator); // store if it's void or not aswell
         defer items.deinit();
         while (read_ptr != stack_ptr) {
             // read the next item and decode it
             const start_idx = read_ptr + @sizeOf(u32);
             const raw_item = try oats.stack.readStackEntry(allocator, file, &read_ptr);
             defer allocator.free(raw_item);
-            const id = (try oats.item.unpack(allocator, start_idx, raw_item)).id;
-            try items.append(id);
+            const item = try oats.item.unpack(allocator, start_idx, raw_item);
+            try items.append(item);
         }
-        // sort the ids (for binaru search)
-        std.mem.sortUnstable(u64, items.items, {}, basicLessThan(u64));
+        // sort the ids (for binary search)
+        std.mem.sortUnstable(oats.item.Metadata, items.items, {}, lessThanItemID);
 
         // read the contents of the database to import
 
@@ -509,20 +532,21 @@ pub fn main() !void {
             const start_idx = read_ptr + @sizeOf(u32);
             const raw_item = try oats.stack.readStackEntry(allocator, ifile, &read_ptr);
             defer allocator.free(raw_item);
-            const id = (try oats.item.unpack(allocator, start_idx, raw_item)).id;
+            const item = try oats.item.unpack(allocator, start_idx, raw_item);
 
             // make sure there are no duplicates
 
             // first check if the id is even within the already established 'bounds'
-            if (items.items.len == 0 or id < items.items[0] or id > items.items[items.items.len-1]) {}
+            if (items.items.len == 0 or item.id < items.items[0].id or item.id > items.items[items.items.len-1].id) {}
             
-            // check if the id is present already
-            else if (binarySearch(id, items.items) != null)
-                continue;
+            // check if the id is present already, and if it's a void or not
+            const is_found, const found = binarySearch(u64, item, items.items, struct{ fn f(x: oats.item.Metadata) u64 { return x.id; } }.f);
+            if (is_found and items.items[found].features.is_void != null) // only import if the pre-existing item is void
+                    continue;
 
             // write the item to the stack
             try oats.stack.push(file, &stack_ptr, raw_item);
-            try items.append(id);
+            try items.append(item);
         }
 
         // write stack pointer back to the database
