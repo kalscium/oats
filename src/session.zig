@@ -108,13 +108,13 @@ pub fn wrapLine(
     if (line.len == 0) return; // nothing to print
 
     // calculate the lines already printed and the total lines
-    const offset_ln = (cursor-1) / coloumns;
+    const offset_ln = (cursor-|1) / coloumns;
     const total_ln = line.len / coloumns;
 
     try stdout.writeAll("\x1B[?25l\x1B[0K");
 
     // write the first line the cursor is on
-    const first_line = line[cursor-1..@min(line.len, (offset_ln + 1) * coloumns)];
+    const first_line = line[cursor-|1..@min(line.len, (offset_ln + 1) * coloumns)];
     try stdout.writeAll(first_line);
 
     // write the rest of the whole lines
@@ -143,7 +143,7 @@ pub fn wrapLine(
     // move the cursor back to it's starting position
     if (free_lines.* > 0)
         try std.fmt.format(stdout, "\x1B[{}A", .{free_lines.*});
-    const moved: isize = @as(isize, @intCast(line.len % coloumns)) - @as(isize, @intCast((cursor - 1) % coloumns));
+    const moved: isize = @as(isize, @intCast(line.len % coloumns)) - @as(isize, @intCast((cursor -| 1) % coloumns));
     if (moved > 0)
         try std.fmt.format(stdout, "\x1B[{}D", .{moved})
     else if (moved < 0)
@@ -153,8 +153,8 @@ pub fn wrapLine(
     try stdout.writeAll("\x1B[?25h");
 }
 
-/// Reads a line from stdin with the specified prompt in raw mode and returns it, owned by caller
-pub fn readLine(allocator: std.mem.Allocator, comptime prompt_len: usize, prompt: []const u8, comptime wrap_prompt: []const u8, sess_id: *i64) !std.ArrayList(u8) {
+/// Reads a line from stdin with the specified prompt and initial text in raw mode and returns it, owned by caller
+pub fn readLine(allocator: std.mem.Allocator, comptime prompt_len: usize, prompt: []const u8, comptime wrap_prompt: []const u8, initial_text: []const u8, sess_id: *i64) !std.ArrayList(u8) {
     // can you imagine if I added line scrolling? that would be painful.
 
     var line = std.ArrayList(u8).init(allocator);
@@ -178,6 +178,14 @@ pub fn readLine(allocator: std.mem.Allocator, comptime prompt_len: usize, prompt
 
     // if the line is to be cleared
     var clear_line = false;
+
+    // write the initial text and jump to the end of the line
+    try line.appendSlice(initial_text);
+    try wrapLine(initial_text, cursor, coloumns, &free_lines, wrap_prompt, stdout);
+    try std.fmt.format(stdout, "\x1B[{}G", .{prompt_len + 1 + initial_text.len % coloumns});
+    if (initial_text.len / coloumns > 0)
+        try std.fmt.format(stdout, "\x1B[{}B", .{initial_text.len / coloumns});
+    cursor = initial_text.len;
 
     // keep reading until EOF or new-line
     while (std.io.getStdIn().reader().readByte()) |char| {
@@ -592,7 +600,7 @@ pub fn session(allocator: std.mem.Allocator, file: std.fs.File, isession_id: i64
     // session loop
     while (true) {
         // read the line
-        const line = try readLine(allocator, 4, "\x1b[35m=>> \x1b[0m", "\x1b[30;1m... \x1b[0m", &session_id);
+        const line = try readLine(allocator, 4, "\x1b[35m=>> \x1b[0m", "\x1b[30;1m... \x1b[0m", "", &session_id);
         defer line.deinit();
 
         // skip empty lines
