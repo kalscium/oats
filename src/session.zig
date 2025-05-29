@@ -154,7 +154,7 @@ pub fn wrapLine(
 }
 
 /// Reads a line from stdin with the specified prompt and initial text in raw mode and returns it, owned by caller
-pub fn readLine(allocator: std.mem.Allocator, comptime prompt_len: usize, prompt: []const u8, comptime wrap_prompt: []const u8, initial_text: []const u8, sess_id: *i64) !std.ArrayList(u8) {
+pub fn readLine(allocator: std.mem.Allocator, comptime prompt_len: usize, prompt: []const u8, comptime wrap_prompt: []const u8, initial_text: []const u8, sess_id: *i64) !?std.ArrayList(u8) {
     // can you imagine if I added line scrolling? that would be painful.
 
     var line = std.ArrayList(u8).init(allocator);
@@ -395,12 +395,16 @@ pub fn readLine(allocator: std.mem.Allocator, comptime prompt_len: usize, prompt
         // clear the line and go to the start of it before unhiding the cursor
         try stdout.writeAll("\x1B[?25h\x1B[2K\x1B[0G");
 
-        // free the line
+        // free the line and return that it's been cleared
         line.deinit();
-        line = @TypeOf(line).init(allocator);
-    } else // ugly, but comment needed: this is when the line isn't cleared and needs to be jumped after it
+        return null;
+    }
+
+    // this is when the line isn't cleared and needs to be jumped after it
+
+    // only jump if the line spans more than one console line
     if (!command_run) {
-        if (lines > 0) { // only jump if the line spans more than one console line
+        if (lines > 0) {
             const cleanup_jump = lines - cursor / coloumns;
             if (cleanup_jump != 0) // only jump if the cursor isn't already on the last line
                 try std.fmt.format(stdout, "\x1B[{}B", .{cleanup_jump});
@@ -600,10 +604,11 @@ pub fn session(allocator: std.mem.Allocator, file: std.fs.File, isession_id: i64
     // session loop
     while (true) {
         // read the line
-        const line = try readLine(allocator, 4, "\x1b[35m=>> \x1b[0m", "\x1b[30;1m... \x1b[0m", "", &session_id);
-        defer line.deinit();
+        const lineo = try readLine(allocator, 4, "\x1b[35m=>> \x1b[0m", "\x1b[30;1m... \x1b[0m", "", &session_id);
 
-        // skip empty lines
+        // skip cleared & empty lines
+        const line = lineo orelse continue;
+        defer line.deinit();
         if (line.items.len == 0) continue;
 
         // pack the read line
