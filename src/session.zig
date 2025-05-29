@@ -393,7 +393,7 @@ pub fn readLine(allocator: std.mem.Allocator, comptime prompt_len: usize, prompt
     } else // ugly, but comment needed: this is when the line isn't cleared and needs to be jumped after it
     if (!command_run) {
         if (lines > 0) { // only jump if the line spans more than one console line
-            const cleanup_jump = lines - (cursor - 1) / coloumns;
+            const cleanup_jump = lines - cursor / coloumns;
             if (cleanup_jump != 0) // only jump if the cursor isn't already on the last line
                 try std.fmt.format(stdout, "\x1B[{}B", .{cleanup_jump});
         }

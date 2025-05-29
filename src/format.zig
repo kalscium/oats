@@ -173,10 +173,10 @@ pub fn normal(allocator: std.mem.Allocator, file: std.fs.File, id: u64, features
     // write the contents if it's text
     if (features.is_void) |_| {
         if (features.image_filename) |filename| {
-            try file.writeAll(" # ");
+            try file.writeAll(" ? ");
             try std.fmt.format(writer, "{s}: <trimmed image data>\n", .{filename});
         } else {
-            try file.writeAll(" | <trimmed oats item>\n");
+            try file.writeAll(" ? <trimmed oats item>\n");
         }
     } else if (features.image_filename) |filename| {
         try file.writeAll(" # ");

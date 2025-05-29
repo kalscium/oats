@@ -852,9 +852,9 @@ pub fn main() !void {
             for (args[2..args.len-1]) |attr| {
                 inline for (@typeInfo(oats.item.FeaturesBitfield).Struct.fields) |field|{
                     if (comptime field.type == bool)
-                    if (std.mem.eql(u8, field.name, attr)) {
+                    if (std.mem.eql(u8, field.name, attr) or std.mem.eql(u8, attr, "everything")) {
                         // check if the item should be trimmed
-                        if (@field(item_features_bitfield, field.name)) {
+                        if (@field(item_features_bitfield, field.name) or std.mem.eql(u8, attr, "everything")) {
                             // copy the item's features and push stubbed version
                             var features = item.features;
                             features.is_void = {};
