@@ -70,14 +70,22 @@ pub fn openOatsDB(path: []const u8) !std.fs.File {
     return file;
 }
 
-pub fn pop(allocator: std.mem.Allocator, to_pop: usize) !void {
+/// Checks if the main oats database file exists, throws error otherwise
+/// Also returns the path of the oats database, owned by caller
+pub fn databaseExists(allocator: std.mem.Allocator) ![]const u8 {
     // if database file doesn't exist throw error
     const path = try oats.getHome(allocator);
-    if (std.fs.cwd().access(path, .{})) {}
-    else |err| {
+    if (std.fs.cwd().access(path, .{})) {
+        return path;
+    } else |err| {
         std.debug.print("info: no oats database found, try running 'oats wipe' to initialize a new one\n", .{});
         return err;
     }
+}
+
+pub fn pop(allocator: std.mem.Allocator, to_pop: usize) !void {
+    const path = try databaseExists(allocator);
+    defer allocator.free(path);
 
     const file = try openOatsDB(path);
     defer file.close();
@@ -112,13 +120,8 @@ pub fn pop(allocator: std.mem.Allocator, to_pop: usize) !void {
 }
 
 pub fn pushImg(allocator: std.mem.Allocator, session_id: ?i64, img_paths: []const []const u8) !void {
-    // if database file doesn't exist throw error
-    const path = try oats.getHome(allocator);
-    if (std.fs.cwd().access(path, .{})) {}
-    else |err| {
-        std.debug.print("info: no oats database found, try running 'oats wipe' to initialize a new one\n", .{});
-        return err;
-    }
+    const path = try databaseExists(allocator);
+    defer allocator.free(path);
 
     const file = try openOatsDB(path);
     defer file.close();
@@ -157,13 +160,8 @@ pub fn pushImg(allocator: std.mem.Allocator, session_id: ?i64, img_paths: []cons
 }
 
 pub fn tail(allocator: std.mem.Allocator, to_pop: usize) !void {
-    // if database file doesn't exist throw error
-    const path = try oats.getHome(allocator);
-    if (std.fs.cwd().access(path, .{})) {}
-    else |err| {
-        std.debug.print("info: no oats database found, try running 'oats wipe' to initialize a new one\n", .{});
-        return err;
-    }
+    const path = try databaseExists(allocator);
+    defer allocator.free(path);
 
     const file = try openOatsDB(path);
     defer file.close();
@@ -248,13 +246,8 @@ pub fn main() !void {
 
     // checks for the 'session' command
     if (std.mem.eql(u8, args[1], "session")) {
-        // if database file doesn't exist throw error
-        const path = try oats.getHome(allocator);
-        if (std.fs.cwd().access(path, .{})) {}
-        else |err| {
-            std.debug.print("info: no oats database found, try running 'oats wipe' to initialize a new one\n", .{});
-            return err;
-        }
+        const path = try databaseExists(allocator);
+        defer allocator.free(path);
 
         const file = try openOatsDB(path);
         defer file.close();
@@ -279,13 +272,8 @@ pub fn main() !void {
             return error.ExpectedArgument;
         }
 
-        // if database file doesn't exist throw error
-        const path = try oats.getHome(allocator);
-        if (std.fs.cwd().access(path, .{})) {}
-        else |err| {
-            std.debug.print("info: no oats database found, try running 'oats wipe' to initialize a new one\n", .{});
-            return err;
-        }
+        const path = try databaseExists(allocator);
+        defer allocator.free(path);
 
         const file = try openOatsDB(path);
         defer file.close();
@@ -343,13 +331,8 @@ pub fn main() !void {
 
     // checks for the 'head' command
     if (std.mem.eql(u8, args[1], "head")) {
-        // if database file doesn't exist throw error
-        const path = try oats.getHome(allocator);
-        if (std.fs.cwd().access(path, .{})) {}
-        else |err| {
-            std.debug.print("info: no oats database found, try running 'oats wipe' to initialize a new one\n", .{});
-            return err;
-        }
+        const path = try databaseExists(allocator);
+        defer allocator.free(path);
 
         const file = try openOatsDB(path);
         defer file.close();
@@ -391,13 +374,8 @@ pub fn main() !void {
 
     // checks for the 'sort' command
     if (std.mem.eql(u8, args[1], "sort")) {
-        // if database file doesn't exist throw error
-        const path = try oats.getHome(allocator);
-        if (std.fs.cwd().access(path, .{})) {}
-        else |err| {
-            std.debug.print("info: no oats database found, try running 'oats wipe' to initialize a new one\n", .{});
-            return err;
-        }
+        const path = try databaseExists(allocator);
+        defer allocator.free(path);
 
         const file = try openOatsDB(path);
         defer file.close();
@@ -486,13 +464,8 @@ pub fn main() !void {
             return error.ExpectedArgument;
         }
 
-        // if database file doesn't exist throw error
-        const path = try oats.getHome(allocator);
-        if (std.fs.cwd().access(path, .{})) {}
-        else |err| {
-            std.debug.print("info: no oats database found, try running 'oats wipe' to initialize a new one\n", .{});
-            return err;
-        }
+        const path = try databaseExists(allocator);
+        defer allocator.free(path);
 
         const file = try openOatsDB(path);
         defer file.close();
@@ -573,13 +546,8 @@ pub fn main() !void {
 
     // checks for the 'count' command
     if (std.mem.eql(u8, args[1], "count")) {
-        // if database file doesn't exist throw error
-        const path = try oats.getHome(allocator);
-        if (std.fs.cwd().access(path, .{})) {}
-        else |err| {
-            std.debug.print("info: no oats database found, try running 'oats wipe' to initialize a new one\n", .{});
-            return err;
-        }
+        const path = try databaseExists(allocator);
+        defer allocator.free(path);
 
         const file = try openOatsDB(path);
         defer file.close();
@@ -607,13 +575,8 @@ pub fn main() !void {
 
     // checks for the 'raw' command
     if (std.mem.eql(u8, args[1], "raw")) {
-        // if database file doesn't exist throw error
-        const path = try oats.getHome(allocator);
-        if (std.fs.cwd().access(path, .{})) {}
-        else |err| {
-            std.debug.print("info: no oats database found, try running 'oats wipe' to initialize a new one\n", .{});
-            return err;
-        }
+        const path = try databaseExists(allocator);
+        defer allocator.free(path);
 
         const file = try openOatsDB(path);
         defer file.close();
@@ -648,13 +611,8 @@ pub fn main() !void {
             return error.ExpectedArgument;
         }
 
-        // if database file doesn't exist throw error
-        const path = try oats.getHome(allocator);
-        if (std.fs.cwd().access(path, .{})) {}
-        else |err| {
-            std.debug.print("info: no oats database found, try running 'oats wipe' to initialize a new one\n", .{});
-            return err;
-        }
+        const path = try databaseExists(allocator);
+        defer allocator.free(path);
 
         const file = try openOatsDB(path);
         defer file.close();
@@ -806,13 +764,8 @@ pub fn main() !void {
             return error.ExpectedArgument;
         }
 
-        // if database file doesn't exist throw error
-        const path = try oats.getHome(allocator);
-        if (std.fs.cwd().access(path, .{})) {}
-        else |err| {
-            std.debug.print("info: no oats database found, try running 'oats wipe' to initialize a new one\n", .{});
-            return err;
-        }
+        const path = try databaseExists(allocator);
+        defer allocator.free(path);
 
         const ifile = try openOatsDB(path);
         defer ifile.close();
@@ -891,13 +844,8 @@ pub fn main() !void {
             return error.ExpectedArgument;
         }
 
-        // if database file doesn't exist throw error
-        const path = try oats.getHome(allocator);
-        if (std.fs.cwd().access(path, .{})) {}
-        else |err| {
-            std.debug.print("info: no oats database found, try running 'oats wipe' to initialize a new one\n", .{});
-            return err;
-        }
+        const path = try databaseExists(allocator);
+        defer allocator.free(path);
 
         const ifile = try openOatsDB(path);
         defer ifile.close();
