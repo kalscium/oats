@@ -178,11 +178,11 @@ pub fn readLine(allocator: std.mem.Allocator, comptime prompt_len: usize, prompt
 
     // write the initial text and jump to the end of the line
     try line.appendSlice(initial_text);
-    try wrapLine(initial_text, cursor, coloumns, &free_lines, wrap_prompt, stdout);
-    try std.fmt.format(stdout, "\x1B[{}G", .{prompt_len + 1 + initial_text.len % coloumns});
-    if (initial_text.len / coloumns > 0)
-        try std.fmt.format(stdout, "\x1B[{}B", .{initial_text.len / coloumns});
-    cursor = initial_text.len;
+    try wrapLine(line.items, cursor, coloumns, &free_lines, wrap_prompt, stdout);
+    try std.fmt.format(stdout, "\x1B[{}G", .{prompt_len + 1 + line.items.len % coloumns});
+    if (line.items.len / coloumns > 0)
+        try std.fmt.format(stdout, "\x1B[{}B", .{line.items.len / coloumns});
+    cursor = line.items.len;
 
     // keep reading until EOF or new-line
     while (std.io.getStdIn().reader().readByte()) |char| {
@@ -378,10 +378,13 @@ pub fn readLine(allocator: std.mem.Allocator, comptime prompt_len: usize, prompt
 
     // if the line is canceled, jump to the first line after clearing all of it's contents
     if (cancel_line) {
-        if (lines > 0) { // only jump if the cursor is not already on the first line
+        if ((cursor -| 1) / coloumns > 0) { // only jump if the cursor is not already on the first line
             const cleanup_jump = (cursor - 1) / coloumns;
             try std.fmt.format(stdout, "\x1B[?25l\x1B[{}A", .{cleanup_jump}); // hide the line and jump
+        }
 
+        // only if there's more than one line
+        if (lines > 0) {
             // wipe all the lines after it and go back to the first line
             try stdout.writeBytesNTimes("\x1B[1B\x1B[2K", lines);
             try std.fmt.format(stdout, "\x1B[{}A", .{lines});
@@ -429,25 +432,16 @@ pub fn readCommand(allocator: std.mem.Allocator, sess_id: *i64) anyerror!void {
     // keep track of free lines to write to
     var free_lines: usize = 0;
 
-    // whether to clear the line or not
-    var clear_line: bool = false;
-
     // keep reading until EOF or new-line
     while (std.io.getStdIn().reader().readByte()) |char| {
         // check for CTRL+D (exit)
         if (char == 4) return error.UserInterrupt;
 
-        // check for CTRL+C (clear)
-        if (char == 3) {
-            clear_line = true;
-            break;
-        }
+        // check for CTRL+C (cancel)
+        if (char == 3) return;
 
         // check for ESC
-        if (char == 27) {
-            clear_line = true;
-            break;
-        }
+        if (char == 27) return;
 
         // check for backspace
         if (char == 127) {
@@ -497,23 +491,22 @@ pub fn readCommand(allocator: std.mem.Allocator, sess_id: *i64) anyerror!void {
     } else |_| {}
 
     // slight cleanup beforehand
+
     const lines = line.items.len / coloumns;
-    if (lines > 0) { // only jump if the cursor is not already on the first line
+    if ((cursor -| 1) / coloumns > 0) { // only jump if the cursor is not already on the first line
         const cleanup_jump = (cursor - 1) / coloumns;
         try std.fmt.format(stdout, "\x1B[?25l\x1B[{}A", .{cleanup_jump}); // hide the line and jump
+    }
 
+    // only if there's more than one line
+    if (lines > 0) {
         // wipe all the lines after it and go back to the first line
         try stdout.writeBytesNTimes("\x1B[1B\x1B[2K", lines);
         try std.fmt.format(stdout, "\x1B[{}A", .{lines});
     }
+
     // clear the line and go to the start of it before unhiding the cursor
     try stdout.writeAll("\x1B[?25h\x1B[2K\x1B[0G");
-
-    // clear line if line needs clearing
-    if (clear_line) {
-        line.deinit();
-        line = @TypeOf(line).init(allocator);
-    }
 
     // check for no command
     if (line.items.len == 0) return;
@@ -609,7 +602,7 @@ pub fn readCommand(allocator: std.mem.Allocator, sess_id: *i64) anyerror!void {
         _ = try file.readAll(last_contents);
         
         // read the line
-        const contentso = try readLine(allocator, 4, "\x1b[36m=>> \x1b[0m", wrap_prompt, last_contents, sess_id);
+        const contentso = try readLine(allocator, 4, "\x1b[36m=>> \x1b[0m", "\x1b[30;1m... \x1b[0m", last_contents, sess_id);
         const contents = contentso orelse return; // return without writing stack_ptr (no changes made)
         defer contents.deinit();
 
