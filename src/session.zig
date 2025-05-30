@@ -173,11 +173,8 @@ pub fn readLine(allocator: std.mem.Allocator, comptime prompt_len: usize, prompt
     // keep track of free lines to write to
     var free_lines: usize = 0;
 
-    // if a command was run
-    var command_run = false;
-
-    // if the line is to be cleared
-    var clear_line = false;
+    // if the line is to be cancelled / cleared
+    var cancel_line = false;
 
     // write the initial text and jump to the end of the line
     try line.appendSlice(initial_text);
@@ -194,7 +191,7 @@ pub fn readLine(allocator: std.mem.Allocator, comptime prompt_len: usize, prompt
 
         // check for CTRL+C (clear)
         if (char == 3) {
-            clear_line = true;
+            cancel_line = true;
             break;
         }
 
@@ -212,9 +209,7 @@ pub fn readLine(allocator: std.mem.Allocator, comptime prompt_len: usize, prompt
 
         // check for `:` (commands)
         if (char == ':' and cursor == 0) {
-            command_run = true;
-            line.deinit();
-            line = @TypeOf(line).init(allocator);
+            cancel_line = true;
             readCommand(allocator, sess_id) catch |err| {
                 // don't crash on errors
                 // except for user interrupts
@@ -381,8 +376,8 @@ pub fn readLine(allocator: std.mem.Allocator, comptime prompt_len: usize, prompt
 
     const lines = line.items.len / coloumns;
 
-    // if the line is cleared, jump to the first line
-    if (clear_line) {
+    // if the line is canceled, jump to the first line after clearing all of it's contents
+    if (cancel_line) {
         if (lines > 0) { // only jump if the cursor is not already on the first line
             const cleanup_jump = (cursor - 1) / coloumns;
             try std.fmt.format(stdout, "\x1B[?25l\x1B[{}A", .{cleanup_jump}); // hide the line and jump
@@ -395,7 +390,7 @@ pub fn readLine(allocator: std.mem.Allocator, comptime prompt_len: usize, prompt
         // clear the line and go to the start of it before unhiding the cursor
         try stdout.writeAll("\x1B[?25h\x1B[2K\x1B[0G");
 
-        // free the line and return that it's been cleared
+        // free the line and return that it's been cancelled
         line.deinit();
         return null;
     }
@@ -403,15 +398,13 @@ pub fn readLine(allocator: std.mem.Allocator, comptime prompt_len: usize, prompt
     // this is when the line isn't cleared and needs to be jumped after it
 
     // only jump if the line spans more than one console line
-    if (!command_run) {
-        if (lines > 0) {
-            const cleanup_jump = lines - cursor / coloumns;
-            if (cleanup_jump != 0) // only jump if the cursor isn't already on the last line
-                try std.fmt.format(stdout, "\x1B[{}B", .{cleanup_jump});
-        }
-        if (line.items.len % coloumns != 0) try stdout.writeByte('\n');
-        try std.fmt.format(stdout, "\x1B[{}G", .{prompt_len * 0});
+    if (lines > 0) {
+        const cleanup_jump = lines - cursor / coloumns;
+        if (cleanup_jump != 0) // only jump if the cursor isn't already on the last line
+            try std.fmt.format(stdout, "\x1B[{}B", .{cleanup_jump});
     }
+    if (line.items.len % coloumns != 0) try stdout.writeByte('\n');
+    try std.fmt.format(stdout, "\x1B[{}G", .{prompt_len * 0});
 
     return line;
 }
