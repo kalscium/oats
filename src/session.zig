@@ -417,7 +417,7 @@ pub fn readLine(allocator: std.mem.Allocator, comptime prompt_len: usize, prompt
 }
 
 /// Reads a line as a command from stdin with the specified prompt in raw mode and executes it
-pub fn readCommand(allocator: std.mem.Allocator, sess_id: *i64) !void {
+pub fn readCommand(allocator: std.mem.Allocator, sess_id: *i64) anyerror!void {
     const prompt_len = 6;
     const prompt = "\x1b[2K\x1b[0G    \x1b[36;1m: \x1b[0m";
     const wrap_prompt = "\x1b[30;1m  ... \x1b[0m";
@@ -583,6 +583,60 @@ pub fn readCommand(allocator: std.mem.Allocator, sess_id: *i64) !void {
             try std.fmt.parseInt(i64, raw_sess_id, 10)
         else std.time.milliTimestamp();
         std.debug.print("updated session id to '{}'\n", .{sess_id.*});
+        return;
+    }
+
+    // check for the 'ammend' command
+    if (std.mem.eql(u8, split_first, "ammend")) {
+        // if database file doesn't exist throw error
+        const path = try main.databaseExists(allocator);
+        defer allocator.free(path);
+
+        const file = try main.openOatsDB(path);
+        defer file.close();
+
+        // get the stack ptr
+        var stack_ptr = try file.reader().readInt(u64, .big);
+
+        // pop the last item
+        const raw_last = try oats.stack.pop(allocator, file, &stack_ptr);
+        defer allocator.free(raw_last);
+        const last = try oats.item.unpack(allocator, stack_ptr + @sizeOf(u32), raw_last);
+
+        // throw error on images or void
+        if (last.features.image_filename) |_|
+            return error.CannotAmmendImage;
+        if (last.features.is_void) |_|
+            return error.CannotAmmendVoidItem;
+
+        // get the conents of the last item
+        try file.seekTo(last.start_idx+last.contents_offset);
+        const last_contents = try allocator.alloc(u8, last.size-last.contents_offset);
+        defer allocator.free(last_contents);
+        _ = try file.readAll(last_contents);
+        
+        // read the line
+        const contentso = try readLine(allocator, 4, "\x1b[36m=>> \x1b[0m", wrap_prompt, last_contents, sess_id);
+        const contents = contentso orelse return; // return without writing stack_ptr (no changes made)
+        defer contents.deinit();
+
+        // construct the item
+        const item = try oats.item.pack(allocator, @intCast(std.time.milliTimestamp()), .{ // should have a different id
+            .timestamp = last.features.timestamp, // might change this cuz it's modifying history
+            .session_id = last.features.session_id,
+            .is_mobile = last.features.is_mobile,
+        }, contents.items);
+        defer allocator.free(item);
+
+        // only push if the ammended version is larger than zero
+        // (zero-sized ammends count as pops)
+        if (contents.items.len > 0)
+            try oats.stack.push(file, &stack_ptr, item);
+
+        // update the stack ptr
+        try file.seekTo(oats.stack.stack_ptr_loc);
+        try file.writer().writeInt(u64, stack_ptr, .big);
+
         return;
     }
 
