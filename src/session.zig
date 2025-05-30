@@ -8,7 +8,7 @@ const std = @import("std");
 const oats = @import("oats");
 const main = @import("main.zig");
 
-const help = "\x1b[35m<<< \x1b[0;1mOATS SESSION \x1b[35m>>>\x1b[0m\n\x1b[35m*\x1b[0m welcome to a space for random thughts or notes!\n\x1b[35m*\x1b[0m some quick controls:\n  \x1b[35m*\x1b[0m CTRL+D or \x1b[36m:\x1b[0mexit to exit the thought session\n  \x1b[35m*\x1b[0m CTRL+C to cancel the line\n  \x1b[35m*\x1b[0m `\x1b[36m:\x1b[0mhelp` to print this help message\n  \x1b[35m*\x1b[0m `\x1b[36m:\x1b[0mtail <?n>` to print the last <n> stack items\n  \x1b[35m*\x1b[0m `\x1b[36m:\x1b[0mpop <?n>` to pop the last <n> stack items\n  \x1b[35m*\x1b[0m `\x1b[36m:\x1b[0mclear` to clear the screen\n  \x1b[35m*\x1b[0m `\x1b[36m:\x1b[0msession <?sess_id>` to change the session id\n  \x1b[35m*\x1b[0m `\x1b[36m:\x1b[0mimg <*images>` to push images to the oats stack\n";
+const help = "\x1b[35m<<< \x1b[0;1mOATS SESSION \x1b[35m>>>\x1b[0m\n\x1b[35m*\x1b[0m welcome to a space for random thughts or notes!\n\x1b[35m*\x1b[0m some quick controls:\n  \x1b[35m*\x1b[0m CTRL+D or \x1b[36m:\x1b[0mexit to exit the thought session\n  \x1b[35m*\x1b[0m CTRL+C to cancel the line\n  \x1b[35m*\x1b[0m `\x1b[36m:\x1b[0mhelp` to print this help message\n  \x1b[35m*\x1b[0m `\x1b[36m:\x1b[0mtail <?n>` to print the last <n> stack items\n  \x1b[35m*\x1b[0m `\x1b[36m:\x1b[0mpop <?n>` to pop the last <n> stack items\n  \x1b[35m*\x1b[0m `\x1b[36m:\x1b[0mclear` to clear the screen\n  \x1b[35m*\x1b[0m `\x1b[36m:\x1b[0msession <?sess_id>` to change the session id\n  \x1b[35m*\x1b[0m `\x1b[36m:\x1b[0mimg <*images>` to push images to the oats stack\n  \x1b[35m*\x1b[0m `\x1b[36m:\x1b[0mamend` to hard-edit the latest stack item\n";
 
 const TerminalFlags = switch (builtin.target.os.tag) {
     .linux => std.os.linux.termios,
@@ -572,8 +572,8 @@ pub fn readCommand(allocator: std.mem.Allocator, sess_id: *i64) anyerror!void {
         return;
     }
 
-    // check for the 'ammend' command
-    if (std.mem.eql(u8, split_first, "ammend")) {
+    // check for the 'amend' command
+    if (std.mem.eql(u8, split_first, "amend")) {
         // if database file doesn't exist throw error
         const path = try main.databaseExists(allocator);
         defer allocator.free(path);
@@ -591,9 +591,9 @@ pub fn readCommand(allocator: std.mem.Allocator, sess_id: *i64) anyerror!void {
 
         // throw error on images or void
         if (last.features.image_filename) |_|
-            return error.CannotAmmendImage;
+            return error.CannotamendImage;
         if (last.features.is_void) |_|
-            return error.CannotAmmendVoidItem;
+            return error.CannotamendVoidItem;
 
         // get the conents of the last item
         try file.seekTo(last.start_idx+last.contents_offset);
@@ -614,8 +614,8 @@ pub fn readCommand(allocator: std.mem.Allocator, sess_id: *i64) anyerror!void {
         }, contents.items);
         defer allocator.free(item);
 
-        // only push if the ammended version is larger than zero
-        // (zero-sized ammends count as pops)
+        // only push if the amended version is larger than zero
+        // (zero-sized amends count as pops)
         if (contents.items.len > 0)
             try oats.stack.push(file, &stack_ptr, item);
 
