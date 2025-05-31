@@ -759,13 +759,45 @@ pub fn main() !void {
                 }
 
                 // if it's simply a text item, then read the contents and write it
-                if (item.features.image_filename == null) {
+                if (item.features.image_filename == null and item.features.filename == null) {
                     const contents = try allocator.alloc(u8, item.size - item.contents_offset);
                     defer allocator.free(contents);
                     try file.seekTo(item.start_idx + item.contents_offset);
                     _ = try file.readAll(contents);
 
                     try oats.format.markdownText(buffered.writer(), contents);
+                    continue;
+                }
+
+                // if it's simply a file, then read the contents write
+                // it to the media dir and then output markdown
+                if (item.features.filename) |filename| {
+                    // create the media path and try write the image files
+                    const media = media_path orelse continue; // if a media path isn't included, dispose of images
+                    std.fs.cwd().access(media, .{}) catch try std.fs.cwd().makeDir(media);
+                    const media_session = try std.fmt.allocPrint(allocator, "{s}/{}", .{
+                        media,
+                        item.features.session_id orelse item.features.timestamp orelse 0,
+                    });
+                    defer allocator.free(media_session);
+                    std.fs.cwd().access(media, .{}) catch try std.fs.cwd().makeDir(media);
+                    std.fs.cwd().access(media_session, .{}) catch try std.fs.cwd().makeDir(media_session);
+
+                    // read contents
+                    const contents = try allocator.alloc(u8, item.size - item.contents_offset);
+                    defer allocator.free(contents);
+                    try file.seekTo(item.start_idx + item.contents_offset);
+                    _ = try file.readAll(contents);
+
+                    // write to file path
+                    const item_path = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ media_session, filename });
+                    defer allocator.free(item_path);
+                    var contents_file = try std.fs.cwd().createFile(item_path, .{});
+                    try contents_file.writeAll(contents);
+                    contents_file.close();
+
+                    // export the markdown
+                    try oats.format.markdownFile(buffered.writer(), media_session, filename);
                     continue;
                 }
 

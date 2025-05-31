@@ -32,6 +32,17 @@ pub fn markdownImgs(writer: anytype, media_path: []const u8, images: []const ite
     try writer.writeAll("</details>\n");
 }
 
+/// Writes a file to a stream in the markdown format
+pub fn markdownFile(writer: anytype, media_path: []const u8, filename: []const u8) !void {
+    try std.fmt.format(writer, "<i>Included File <a href=\"file://{s}/{s}\">'{s}'</a> (<code>{s}/{s}</code>)</i>\n", .{
+        media_path,
+        filename,
+        filename,
+        media_path,
+        filename,
+    });
+}
+
 /// Writes a markdown header if certain conditions are met based upon the
 /// current & previous features and also if a new collection has been started
 pub fn markdownHeader(writer: anytype, tz_offset: i16, features: item.Features, prev_features: item.Features, new_col: bool) !void {
@@ -110,14 +121,15 @@ pub fn normal(allocator: std.mem.Allocator, file: std.fs.File, id: u64, features
         const id_label = "id: ".len;
         const date_label = ", date: ".len;
         const session_id_label = ", sess_id: ".len;
-        const img_col_id_label = ", kind: image".len;
+        const kind_label = ", kind: ".len;
+        const kind_lable_wcs = @max("image".len, "file".len);
         const mobile_label = ", on: mobile".len;
 
         // features
         const date = 25; // iso-8601 date size
         const session_id = @as(comptime_int, @intFromFloat(@floor(@log10(@as(comptime_float, @floatFromInt(std.math.maxInt(i64))))))) + 2;
         
-        break :blk largest_id + id_label + date_label + session_id_label + img_col_id_label + mobile_label + date + session_id;
+        break :blk largest_id + id_label + date_label + session_id_label + kind_label + kind_lable_wcs + mobile_label + date + session_id;
     };
 
     var writer = file.writer();
@@ -160,6 +172,13 @@ pub fn normal(allocator: std.mem.Allocator, file: std.fs.File, id: u64, features
         current_size += label.len;
     }
 
+    // write the file flag if it is one
+    if (features.filename) |_| {
+        const label = ", kind: file";
+        try writer.writeAll(label);
+        current_size += label.len;
+    }
+
     // write the mobile label if there is one
     if (features.is_mobile) |_| {
         const label = ", on: mobile";
@@ -181,6 +200,9 @@ pub fn normal(allocator: std.mem.Allocator, file: std.fs.File, id: u64, features
     } else if (features.image_filename) |filename| {
         try file.writeAll(" # ");
         try std.fmt.format(writer, "{s}: <binary image data>\n", .{filename});
+    } else if (features.filename) |filename| {
+        try file.writeAll(" # ");
+        try std.fmt.format(writer, "{s}: <binary data>\n", .{filename});
     } else {
         try file.writeAll(" | ");
         try file.writeAll(contents);
