@@ -207,6 +207,23 @@ pub fn readLine(allocator: std.mem.Allocator, comptime prompt_len: usize, prompt
             continue;
         }
 
+        // check for tabs
+        if (char == '\t') {
+            try line.insertSlice(cursor, "  ");
+            cursor += 2;
+
+            // print changes to terminal
+            try wrapLine(line.items, cursor, coloumns, &free_lines, wrap_prompt, stdout);
+            try std.fmt.format(stdout, "\x1B[{}G", .{prompt_len+1+cursor % coloumns}); // skip the prompt
+            if ((cursor-1) / coloumns > 0 and cursor % coloumns <= 2) {
+                try stdout.writeAll("\x1B[1B"); // go one down
+                std.debug.print("\nthis will crash, and I don't know why\nwait until the oats session rewrite...\n", .{});
+                free_lines -= 1;
+            }
+
+            continue;
+        }
+
         // check for `:` (commands)
         if (char == ':' and cursor == 0) {
             cancel_line = true;
