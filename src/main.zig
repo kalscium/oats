@@ -300,8 +300,8 @@ pub fn main() !void {
         return;
     }
 
-    // checks for the 'push-img' command
-    if (std.mem.eql(u8, args[1], "push-img")) {
+    // checks for the 'img' command
+    if (std.mem.eql(u8, args[1], "img")) {
         // check for the arg
         if (args.len < 3) {
             printHelp();
@@ -928,7 +928,7 @@ fn printHelp() void {
         \\Commands:
         \\    session <?sess_id>      | starts an interactive session that pushes thoughts/notes to the stack from stdin with the specificed session id (defaults to current timestamp)
         \\    push <text>             | push a singular thought/note to the oats stack
-        \\    push-img <*paths>       | pushs images to the oats stack
+        \\    img <*paths>            | pushs image files at <paths> to the oats stack
         \\    pop  <?n>               | pops <n> (defaults to 1) items off the stack (removes it)
         \\    tail <?n>               | prints the last <n> (defaults to 1) stack items (thoughts/notes)
         \\    head <?n>               | prints the first <n> (defaults to 1) stack items (thoughts/notes)
