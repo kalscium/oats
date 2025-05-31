@@ -159,6 +159,46 @@ pub fn pushImg(allocator: std.mem.Allocator, session_id: ?i64, img_paths: []cons
     try file.writer().writeInt(u64, stack_ptr, .big);
 }
 
+pub fn pushFile(allocator: std.mem.Allocator, session_id: ?i64, paths: []const []const u8) !void {
+    const db_path = try databaseExists(allocator);
+    defer allocator.free(db_path);
+
+    const file = try openOatsDB(db_path);
+    defer file.close();
+
+    // get the stack ptr
+    var stack_ptr = try file.reader().readInt(u64, .big);
+
+    // iterate through the image paths and push each of them
+    for (paths) |path| {
+        // open the image file
+        const fimage = try std.fs.cwd().openFile(path, .{});
+        const image = try fimage.readToEndAlloc(allocator, (try fimage.metadata()).size());
+        defer allocator.free(image);
+
+        // get the time & construct the stack item
+        const time = std.time.milliTimestamp();
+        var path_iter = std.mem.splitBackwardsScalar(u8, path, '/');
+        const features: oats.item.Features = .{
+            .timestamp = time,
+            .session_id = session_id,
+            .filename = path_iter.first(),
+            .is_mobile = if (options.is_mobile) {} else null,
+        };
+        const item = try oats.item.pack(allocator, @bitCast(time), features, image);
+        defer allocator.free(item);
+
+        // push the item
+        try oats.stack.push(file, &stack_ptr, item);
+
+        std.debug.print("pushed file '{s}'\n", .{path});
+    }
+
+    // update the stack ptr
+    try file.seekTo(oats.stack.stack_ptr_loc);
+    try file.writer().writeInt(u64, stack_ptr, .big);
+}
+
 pub fn tail(allocator: std.mem.Allocator, to_pop: usize) !void {
     const path = try databaseExists(allocator);
     defer allocator.free(path);
@@ -309,6 +349,19 @@ pub fn main() !void {
         }
 
         try pushImg(allocator, null, args[2..]);
+
+        return;
+    }
+
+    // checks for the 'file' command
+    if (std.mem.eql(u8, args[1], "file")) {
+        // check for the arg
+        if (args.len < 3) {
+            printHelp();
+            return error.ExpectedArgument;
+        }
+
+        try pushFile(allocator, null, args[2..]);
 
         return;
     }
@@ -929,6 +982,7 @@ fn printHelp() void {
         \\    session <?sess_id>      | starts an interactive session that pushes thoughts/notes to the stack from stdin with the specificed session id (defaults to current timestamp)
         \\    push <text>             | push a singular thought/note to the oats stack
         \\    img <*paths>            | pushs image files at <paths> to the oats stack
+        \\    file <*paths>           | pushs the files at <paths> to the oats stack
         \\    pop  <?n>               | pops <n> (defaults to 1) items off the stack (removes it)
         \\    tail <?n>               | prints the last <n> (defaults to 1) stack items (thoughts/notes)
         \\    head <?n>               | prints the first <n> (defaults to 1) stack items (thoughts/notes)
