@@ -12,8 +12,9 @@ pub const FeaturesBitfield = packed struct(u8) {
     is_image: bool,
     is_mobile: bool,
     is_void: bool,
+    is_file: bool,
 
-    _padding: u2 = 0,
+    _padding: u1 = 0,
 };
 
 /// General metadata of a stack item (for reading) so you don't have to keep
@@ -50,6 +51,11 @@ pub const Features = struct {
     is_mobile: ?void = null,
     /// If the item is trimmed (shallow copy) (no contents)
     is_void: ?void = null,
+    /// The filename of a stored file
+    /// 
+    /// note: independant and mutually exclusive of `image_filename`
+    ///       for backwards compatibility reasons
+    filename: ?[]const u8 = null,
 };
 
 /// Calculates the size based upon the features enabled
@@ -63,8 +69,13 @@ pub fn featuresSize(features: Features) usize {
             size += @sizeOf(@TypeOf(feature));
     }
 
-    // special case for filenames as it has a dynamic size
+    // special case for filenames as they have a dynamic sizes
     if (features.image_filename) |filename| {
+        // remove the size of the slice
+        size -= @sizeOf(@TypeOf(filename));
+        // push the size of the filename and size of the length
+        size += @sizeOf(u16) + filename.len;
+    } if (features.filename) |filename| {
         // remove the size of the slice
         size -= @sizeOf(@TypeOf(filename));
         // push the size of the filename and size of the length
@@ -82,6 +93,7 @@ pub fn featuresToBitfield(features: Features) FeaturesBitfield {
         .is_image = features.image_filename != null,
         .is_mobile = features.is_mobile != null,
         .is_void = features.is_void != null,
+        .is_file = features.filename != null,
     };
 }
 
@@ -114,8 +126,19 @@ pub fn pack(allocator: std.mem.Allocator, id: u64, features: Features, contents:
         offset += @sizeOf(@TypeOf(timestamp));
     }
 
-    // write the filename
+    // write the image filename
     if (features.image_filename) |filename| {
+        // write the length of the filename
+        @memcpy(buffer[offset..offset+@sizeOf(u16)], std.mem.asBytes(&std.mem.nativeToBig(u16, @intCast(filename.len))));
+        offset += @sizeOf(u16);
+
+        // write the contents
+        @memcpy(buffer[offset..offset+filename.len], filename);
+        offset += filename.len;
+    }
+
+    // write the filename
+    if (features.filename) |filename| {
         // write the length of the filename
         @memcpy(buffer[offset..offset+@sizeOf(u16)], std.mem.asBytes(&std.mem.nativeToBig(u16, @intCast(filename.len))));
         offset += @sizeOf(u16);
@@ -171,6 +194,20 @@ pub fn unpack(allocator: std.mem.Allocator, start_idx: usize, item: []const u8) 
         @memcpy(filename, item[offset..offset+fn_len]);
         offset += fn_len;
         features.image_filename = filename;
+    }
+
+    // decode the file metadata
+    if (features_bitfield.is_file) {
+        // decode the filename length
+        const fn_len = std.mem.bigToNative(u16, std.mem.bytesToValue(u16, item[offset..offset+@sizeOf(u16)]));
+        offset += @sizeOf(u16);
+
+        // decode the filename
+        // allocate the filename
+        const filename = try allocator.alloc(u8, fn_len);
+        @memcpy(filename, item[offset..offset+fn_len]);
+        offset += fn_len;
+        features.filename = filename;
     }
 
     // mobile flag
