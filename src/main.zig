@@ -159,6 +159,68 @@ pub fn pushImg(allocator: std.mem.Allocator, session_id: ?i64, img_paths: []cons
     try file.writer().writeInt(u64, stack_ptr, .big);
 }
 
+pub fn pushVid(allocator: std.mem.Allocator, session_id: ?i64, vid_paths: []const []const u8) !void {
+    const path = try databaseExists(allocator);
+    defer allocator.free(path);
+
+    const file = try openOatsDB(path);
+    defer file.close();
+
+    // get the stack ptr
+    var stack_ptr = try file.reader().readInt(u64, .big);
+
+    // iterate through the image paths and push each of them
+    for (vid_paths) |vid_path| {
+        // open the video file
+        const fvid = try std.fs.cwd().openFile(vid_path, .{});
+        const vid = try fvid.readToEndAlloc(allocator, (try fvid.metadata()).size());
+        defer allocator.free(vid);
+
+        // get the time & construct the stack item
+        const time = std.time.milliTimestamp();
+        var path_iter = std.mem.splitBackwardsScalar(u8, vid_path, '/');
+        const features: oats.item.Features = .{
+            .timestamp = time,
+            .session_id = session_id,
+            .filename = path_iter.first(),
+            .is_mobile = if (options.is_mobile) {} else null,
+            .is_vid = {},
+        };
+        const item = try oats.item.pack(allocator, @bitCast(time), features, vid);
+        defer allocator.free(item);
+
+        // push the item
+        try oats.stack.push(file, &stack_ptr, item);
+
+        std.debug.print("pushed image '{s}'\n", .{vid_path});
+    }
+    
+    // if no paths provided, simply read from stdin
+    if (vid_paths.len == 0) {
+        // open the video file
+        const video = try std.io.getStdIn().readToEndAlloc(allocator, 1024 * 1024 * 1024 * 4); // 4GiB limit
+        defer allocator.free(video);
+
+        // get the time & construct the stack item
+        const time = std.time.milliTimestamp();
+        const features: oats.item.Features = .{
+            .timestamp = time,
+            .session_id = session_id,
+            .is_vid = {},
+            .is_mobile = if (options.is_mobile) {} else null,
+        };
+        const item = try oats.item.pack(allocator, @bitCast(time), features, video);
+        defer allocator.free(item);
+
+        // push the item
+        try oats.stack.push(file, &stack_ptr, item);
+    }
+
+    // update the stack ptr
+    try file.seekTo(oats.stack.stack_ptr_loc);
+    try file.writer().writeInt(u64, stack_ptr, .big);
+}
+
 pub fn pushFile(allocator: std.mem.Allocator, session_id: ?i64, paths: []const []const u8) !void {
     const db_path = try databaseExists(allocator);
     defer allocator.free(db_path);
@@ -352,6 +414,10 @@ pub fn main() !void {
 
         return;
     }
+
+    // checks for the 'vid' command
+    if (std.mem.eql(u8, args[1], "vid"))
+        return pushVid(allocator, null, args[2..]);
 
     // checks for the 'file' command
     if (std.mem.eql(u8, args[1], "file")) {
@@ -1015,6 +1081,7 @@ fn printHelp() void {
         \\    push <text>             | push a singular thought/note to the oats stack
         \\    img <*paths>            | pushs image files at <paths> to the oats stack
         \\    file <*paths>           | pushs the files at <paths> to the oats stack
+        \\    vid <?*paths>           | pushes the video files (<4GiB) at <paths> (otherwise defaults to stdin)
         \\    pop  <?n>               | pops <n> (defaults to 1) items off the stack (removes it)
         \\    tail <?n>               | prints the last <n> (defaults to 1) stack items (thoughts/notes)
         \\    head <?n>               | prints the first <n> (defaults to 1) stack items (thoughts/notes)
