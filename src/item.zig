@@ -13,8 +13,9 @@ pub const FeaturesBitfield = packed struct(u8) {
     is_mobile: bool,
     is_void: bool,
     is_file: bool,
+    is_vid: bool,
 
-    _padding: u1 = 0,
+    _padding: u0 = 0,
 };
 
 /// General metadata of a stack item (for reading) so you don't have to keep
@@ -56,6 +57,9 @@ pub const Features = struct {
     /// note: independant and mutually exclusive of `image_filename`
     ///       for backwards compatibility reasons
     filename: ?[]const u8 = null,
+    /// If the stored file is a vidoe
+    /// (may or may not include a filename (?filename))
+    is_vid: ?void = null,
 };
 
 /// Calculates the size based upon the features enabled
@@ -94,6 +98,7 @@ pub fn featuresToBitfield(features: Features) FeaturesBitfield {
         .is_mobile = features.is_mobile != null,
         .is_void = features.is_void != null,
         .is_file = features.filename != null,
+        .is_vid = features.is_vid != null,
     };
 }
 
@@ -215,6 +220,9 @@ pub fn unpack(allocator: std.mem.Allocator, start_idx: usize, item: []const u8) 
 
     // is_void flag
     features.is_void = if (features_bitfield.is_void) {} else null;
+
+    // is_vid flag
+    features.is_vid = if (features_bitfield.is_vid) {} else null;
 
     return .{
         .id = id,

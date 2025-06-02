@@ -195,8 +195,8 @@ pub fn readLine(allocator: std.mem.Allocator, comptime prompt_len: usize, prompt
             break;
         }
 
-        // check for escape codes
-        if (char == 27) {
+        // check for escape codes (linux & windows)
+        if (char == 27 or char == 0 or char == 224) {
             escape = true;
             continue;
         }
