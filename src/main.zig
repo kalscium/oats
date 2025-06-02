@@ -192,7 +192,7 @@ pub fn pushVid(allocator: std.mem.Allocator, session_id: ?i64, vid_paths: []cons
         // push the item
         try oats.stack.push(file, &stack_ptr, item);
 
-        std.debug.print("pushed image '{s}'\n", .{vid_path});
+        std.debug.print("pushed video '{s}'\n", .{vid_path});
     }
     
     // if no paths provided, simply read from stdin
@@ -825,7 +825,7 @@ pub fn main() !void {
                 }
 
                 // if it's simply a text item, then read the contents and write it
-                if (item.features.image_filename == null and item.features.filename == null) {
+                if (item.features.image_filename == null and item.features.filename == null and item.features.is_vid == null) {
                     const contents = try allocator.alloc(u8, item.size - item.contents_offset);
                     defer allocator.free(contents);
                     try file.seekTo(item.start_idx + item.contents_offset);
@@ -837,6 +837,7 @@ pub fn main() !void {
 
                 // if it's simply a file, then read the contents write
                 // it to the media dir and then output markdown
+                if (item.features.is_vid == null)
                 if (item.features.filename) |filename| {
                     // create the media path and try write the image files
                     const media = media_path orelse continue; // if a media path isn't included, dispose of images
@@ -865,42 +866,86 @@ pub fn main() !void {
                     // export the markdown
                     try oats.format.markdownFile(buffered.writer(), media_session, filename);
                     continue;
+                };
+
+                // if it's an image, collect together all the consecutive images into a slice
+                if (item.features.image_filename) |_| {
+                    var img_idx: usize = i;
+                    while (img_idx < collection.items.len and collection.items[img_idx].features.image_filename != null)
+                        img_idx += 1;
+                    const images = collection.items[i..img_idx];
+                    i = img_idx - 1;
+
+                    // create the media path and try write the image files
+                    const media = media_path orelse continue; // if a media path isn't included, dispose of images
+                    std.fs.cwd().access(media, .{}) catch try std.fs.cwd().makeDir(media);
+                    const media_session = try std.fmt.allocPrint(allocator, "{s}/{}", .{
+                        media,
+                        item.features.session_id orelse item.features.timestamp orelse 0,
+                    });
+                    defer allocator.free(media_session);
+                    std.fs.cwd().access(media, .{}) catch try std.fs.cwd().makeDir(media);
+                    std.fs.cwd().access(media_session, .{}) catch try std.fs.cwd().makeDir(media_session);
+                    for (images) |image| {
+                        // read contents
+                        const contents = try allocator.alloc(u8, image.size - image.contents_offset);
+                        defer allocator.free(contents);
+                        try file.seekTo(image.start_idx + image.contents_offset);
+                        _ = try file.readAll(contents);
+
+                        // write to file path
+                        const image_path = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ media_session, image.features.image_filename.? });
+                        defer allocator.free(image_path);
+                        var img_file = try std.fs.cwd().createFile(image_path, .{});
+                        try img_file.writeAll(contents);
+                        img_file.close();
+                    }
+
+                    // export the image in markdown format (actually HTML)
+                    try oats.format.markdownImgs(buffered.writer(), media_session, images);
+                    continue;
                 }
 
-                // otherwise, collect together all the consecutive images into a slice
-                var img_idx: usize = i;
-                while (img_idx < collection.items.len and collection.items[img_idx].features.image_filename != null)
-                    img_idx += 1;
-                const images = collection.items[i..img_idx];
-                i = img_idx - 1;
+                // if it's an image, collect together all the consecutive videos into a slice
+                if (item.features.is_vid) |_| {
+                    var vid_idx: usize = i;
+                    while (vid_idx < collection.items.len and collection.items[vid_idx].features.is_vid != null)
+                        vid_idx += 1;
+                    const videos = collection.items[i..vid_idx];
+                    i = vid_idx - 1;
 
-                // create the media path and try write the image files
-                const media = media_path orelse continue; // if a media path isn't included, dispose of images
-                std.fs.cwd().access(media, .{}) catch try std.fs.cwd().makeDir(media);
-                const media_session = try std.fmt.allocPrint(allocator, "{s}/{}", .{
-                    media,
-                    item.features.session_id orelse item.features.timestamp orelse 0,
-                });
-                defer allocator.free(media_session);
-                std.fs.cwd().access(media, .{}) catch try std.fs.cwd().makeDir(media);
-                std.fs.cwd().access(media_session, .{}) catch try std.fs.cwd().makeDir(media_session);
-                for (images) |image| {
-                    // read contents
-                    const contents = try allocator.alloc(u8, image.size - image.contents_offset);
-                    defer allocator.free(contents);
-                    try file.seekTo(image.start_idx + image.contents_offset);
-                    _ = try file.readAll(contents);
+                    // create the media path and try write the video files
+                    const media = media_path orelse continue; // if a media path isn't included, dispose of videos
+                    std.fs.cwd().access(media, .{}) catch try std.fs.cwd().makeDir(media);
+                    const media_session = try std.fmt.allocPrint(allocator, "{s}/{}", .{
+                        media,
+                        item.features.session_id orelse item.features.timestamp orelse 0,
+                    });
+                    defer allocator.free(media_session);
+                    std.fs.cwd().access(media, .{}) catch try std.fs.cwd().makeDir(media);
+                    std.fs.cwd().access(media_session, .{}) catch try std.fs.cwd().makeDir(media_session);
+                    for (videos) |video| {
+                        // read contents
+                        const contents = try allocator.alloc(u8, video.size - video.contents_offset);
+                        defer allocator.free(contents);
+                        try file.seekTo(video.start_idx + video.contents_offset);
+                        _ = try file.readAll(contents);
 
-                    // write to file path
-                    const image_path = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ media_session, image.features.image_filename.? });
-                    defer allocator.free(image_path);
-                    var img_file = try std.fs.cwd().createFile(image_path, .{});
-                    try img_file.writeAll(contents);
-                    img_file.close();
+                        // write to file path
+                        const image_path = if (video.features.filename) |filename|
+                            try std.fmt.allocPrint(allocator, "{s}/{s}", .{ media_session,  filename})
+                        else
+                            try std.fmt.allocPrint(allocator, "{s}/{}.mp4", .{ media_session,  video.id});
+                        defer allocator.free(image_path);
+                        var img_file = try std.fs.cwd().createFile(image_path, .{});
+                        try img_file.writeAll(contents);
+                        img_file.close();
+                    }
+
+                    // export the video in markdown format (actually HTML)
+                    try oats.format.markdownVideo(buffered.writer(), media_session, videos);
+                    continue;
                 }
-
-                // export the image in markdown format (actually HTML)
-                try oats.format.markdownImgs(buffered.writer(), media_session, images);
             }
         }
 

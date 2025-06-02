@@ -32,6 +32,38 @@ pub fn markdownImgs(writer: anytype, media_path: []const u8, images: []const ite
     try writer.writeAll("</details>\n");
 }
 
+/// Writes a video stack items to a stream in the 'markdown' format, given the last stack item
+pub fn markdownVideo(writer: anytype, media_path: []const u8, videos: []const item.Metadata) !void {
+    // write the opening HTML tag
+    try std.fmt.format(writer, "<details>\n    <summary><i>{} Included Video{s}</i></summary>\n", .{
+        videos.len,
+        if (videos.len > 1) "s" else "",
+    });
+
+    // iterate through the video metadatas and write that paths (media files should exist atp)
+    for (videos) |video| {
+        // assume the video file kind to be mp4
+        if (video.features.filename) |filename| {
+            try std.fmt.format(writer, "    <code>{s}</code>\n    <video width=\"320\" height=\"240\" controls src=\"{s}/{s}\" type=\"video/mp4\" alt=\"{s}\">\n", .{
+                filename,
+                media_path,
+                filename,
+                filename,
+            });
+        } else {
+            try std.fmt.format(writer, "    <code>{}</code>\n    <video width=\"320\" height=\"240\" controls src=\"{s}/{}.mp4\" type=\"video/mp4\" alt=\"{}\">\n", .{
+                video.id,
+                media_path,
+                video.id,
+                video.id,
+            });
+        }
+    }
+
+    // write the closing HTML tag
+    try writer.writeAll("</details>\n");
+}
+
 /// Writes a file to a stream in the markdown format
 pub fn markdownFile(writer: anytype, media_path: []const u8, filename: []const u8) !void {
     try std.fmt.format(writer, "<i>Included File <a href=\"file://{s}/{s}\">'{s}'</a> (<code>{s}/{s}</code>)</i>\n", .{
@@ -122,7 +154,7 @@ pub fn normal(allocator: std.mem.Allocator, file: std.fs.File, id: u64, features
         const date_label = ", date: ".len;
         const session_id_label = ", sess_id: ".len;
         const kind_label = ", kind: ".len;
-        const kind_lable_wcs = @max("image".len, "file".len);
+        const kind_lable_wcs = @max("image".len, "file".len, "video".len);
         const mobile_label = ", on: mobile".len;
 
         // features
@@ -173,8 +205,15 @@ pub fn normal(allocator: std.mem.Allocator, file: std.fs.File, id: u64, features
     }
 
     // write the file flag if it is one
-    if (features.filename) |_| {
+    if (features.filename != null and features.is_vid == null) {
         const label = ", kind: file";
+        try writer.writeAll(label);
+        current_size += label.len;
+    }
+
+    // write the video flag if it is one
+    if (features.is_vid) |_| {
+        const label = ", kind: video";
         try writer.writeAll(label);
         current_size += label.len;
     }
@@ -191,18 +230,19 @@ pub fn normal(allocator: std.mem.Allocator, file: std.fs.File, id: u64, features
 
     // write the contents if it's text
     if (features.is_void) |_| {
-        if (features.image_filename) |filename| {
-            try file.writeAll(" ? ");
-            try std.fmt.format(writer, "{s}: <trimmed image data>\n", .{filename});
-        } else {
+        if (features.image_filename) |filename|
+            try std.fmt.format(writer, " ? {s}: <trimmed image data>\n", .{filename})
+        else
             try file.writeAll(" ? <trimmed oats item>\n");
-        }
     } else if (features.image_filename) |filename| {
-        try file.writeAll(" # ");
-        try std.fmt.format(writer, "{s}: <binary image data>\n", .{filename});
+        try std.fmt.format(writer, " # {s}: <binary image data>\n", .{filename});
+    } else if (features.is_vid) |_| {
+        if (features.filename) |filename|
+            try std.fmt.format(writer, " # {s}: <binary video data>\n", .{filename})
+        else
+            try writer.writeAll(" # <binary video data>\n");
     } else if (features.filename) |filename| {
-        try file.writeAll(" # ");
-        try std.fmt.format(writer, "{s}: <binary data>\n", .{filename});
+        try std.fmt.format(writer, " # {s}: <binary data>\n", .{filename});
     } else {
         try file.writeAll(" | ");
         try file.writeAll(contents);
