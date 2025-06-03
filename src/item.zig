@@ -13,8 +13,9 @@ pub const FeaturesBitfield = packed struct(u8) {
     is_mobile: bool,
     is_void: bool,
     is_file: bool,
+    is_vid: bool,
 
-    _padding: u1 = 0,
+    _padding: u0 = 0,
 };
 
 /// General metadata of a stack item (for reading) so you don't have to keep
@@ -56,6 +57,23 @@ pub const Features = struct {
     /// note: independant and mutually exclusive of `image_filename`
     ///       for backwards compatibility reasons
     filename: ?[]const u8 = null,
+    /// What video type the video is
+    /// (may or may not include a filename (?filename))
+    vid_kind: ?VideoKind = null,
+
+    /// An enum that holds the internal type of video
+    pub const VideoKind = enum(u8) {
+        mp4,
+        ogg,
+        webm,
+        pub fn toString(self: VideoKind) []const u8 {
+            return switch (self) {
+                .mp4 => "mp4",
+                .ogg => "ogg",
+                .webm => "webm",
+            };
+        }
+    };
 };
 
 /// Calculates the size based upon the features enabled
@@ -94,6 +112,7 @@ pub fn featuresToBitfield(features: Features) FeaturesBitfield {
         .is_mobile = features.is_mobile != null,
         .is_void = features.is_void != null,
         .is_file = features.filename != null,
+        .is_vid = features.vid_kind != null,
     };
 }
 
@@ -146,6 +165,14 @@ pub fn pack(allocator: std.mem.Allocator, id: u64, features: Features, contents:
         // write the contents
         @memcpy(buffer[offset..offset+filename.len], filename);
         offset += filename.len;
+    }
+
+    // write the video-kind
+    if (features.vid_kind) |kind| {
+        // write the enum byte
+        buffer[offset] = std.mem.asBytes(&std.mem.nativeToBig(u8, @intFromEnum(kind)))[0];
+
+        offset += 1;
     }
 
     // write the rest of the contents
@@ -208,6 +235,14 @@ pub fn unpack(allocator: std.mem.Allocator, start_idx: usize, item: []const u8) 
         @memcpy(filename, item[offset..offset+fn_len]);
         offset += fn_len;
         features.filename = filename;
+    }
+
+    // decode the video kind
+    if (features_bitfield.is_vid) {
+        // decode the video kind
+        const kind: Features.VideoKind = @enumFromInt(std.mem.bigToNative(u8, std.mem.bytesToValue(u8, item[offset..offset+@sizeOf(u8)])));
+        offset += 1;
+        features.vid_kind = kind;
     }
 
     // mobile flag
