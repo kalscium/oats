@@ -176,6 +176,14 @@ pub fn pushVid(allocator: std.mem.Allocator, session_id: ?i64, vid_paths: []cons
         const vid = try fvid.readToEndAlloc(allocator, (try fvid.metadata()).size());
         defer allocator.free(vid);
 
+        // read the magic and determine their kind
+        const magic = vid[0..8];
+        const kind: oats.item.Features.VideoKind =
+            if (std.mem.eql(u8, magic[4..], "ftyp")) .mp4
+            else if (std.mem.eql(u8, magic[0..4], "OggS")) .ogg
+            else if (std.mem.eql(u8, magic[0..4], &.{ 0x1A, 0x45, 0xDF, 0xA3 })) .webm
+            else return error.InvalidVideo;
+
         // get the time & construct the stack item
         const time = std.time.milliTimestamp();
         var path_iter = std.mem.splitBackwardsScalar(u8, vid_path, '/');
@@ -184,7 +192,7 @@ pub fn pushVid(allocator: std.mem.Allocator, session_id: ?i64, vid_paths: []cons
             .session_id = session_id,
             .filename = path_iter.first(),
             .is_mobile = if (options.is_mobile) {} else null,
-            .is_vid = {},
+            .vid_kind = kind,
         };
         const item = try oats.item.pack(allocator, @bitCast(time), features, vid);
         defer allocator.free(item);
@@ -201,12 +209,20 @@ pub fn pushVid(allocator: std.mem.Allocator, session_id: ?i64, vid_paths: []cons
         const video = try std.io.getStdIn().readToEndAlloc(allocator, 1024 * 1024 * 1024 * 4); // 4GiB limit
         defer allocator.free(video);
 
+        // read the magic and determine their kind
+        const magic = video[0..8];
+        const kind: oats.item.Features.VideoKind =
+            if (std.mem.eql(u8, magic[4..], "ftyp")) .mp4
+            else if (std.mem.eql(u8, magic[0..4], "OggS")) .ogg
+            else if (std.mem.eql(u8, magic[0..4], &.{ 0x1A, 0x45, 0xDF, 0xA3 })) .webm
+            else return error.InvalidVideo;
+
         // get the time & construct the stack item
         const time = std.time.milliTimestamp();
         const features: oats.item.Features = .{
             .timestamp = time,
             .session_id = session_id,
-            .is_vid = {},
+            .vid_kind = kind,
             .is_mobile = if (options.is_mobile) {} else null,
         };
         const item = try oats.item.pack(allocator, @bitCast(time), features, video);
@@ -825,7 +841,7 @@ pub fn main() !void {
                 }
 
                 // if it's simply a text item, then read the contents and write it
-                if (item.features.image_filename == null and item.features.filename == null and item.features.is_vid == null) {
+                if (item.features.image_filename == null and item.features.filename == null and item.features.vid_kind == null) {
                     const contents = try allocator.alloc(u8, item.size - item.contents_offset);
                     defer allocator.free(contents);
                     try file.seekTo(item.start_idx + item.contents_offset);
@@ -837,7 +853,7 @@ pub fn main() !void {
 
                 // if it's simply a file, then read the contents write
                 // it to the media dir and then output markdown
-                if (item.features.is_vid == null)
+                if (item.features.vid_kind == null)
                 if (item.features.filename) |filename| {
                     // create the media path and try write the image files
                     const media = media_path orelse continue; // if a media path isn't included, dispose of images
@@ -907,9 +923,9 @@ pub fn main() !void {
                 }
 
                 // if it's an image, collect together all the consecutive videos into a slice
-                if (item.features.is_vid) |_| {
+                if (item.features.vid_kind) |_| {
                     var vid_idx: usize = i;
-                    while (vid_idx < collection.items.len and collection.items[vid_idx].features.is_vid != null)
+                    while (vid_idx < collection.items.len and collection.items[vid_idx].features.vid_kind != null)
                         vid_idx += 1;
                     const videos = collection.items[i..vid_idx];
                     i = vid_idx - 1;

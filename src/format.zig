@@ -42,19 +42,20 @@ pub fn markdownVideo(writer: anytype, media_path: []const u8, videos: []const it
 
     // iterate through the video metadatas and write that paths (media files should exist atp)
     for (videos) |video| {
-        // assume the video file kind to be mp4
         if (video.features.filename) |filename| {
-            try std.fmt.format(writer, "    <code>{s}</code>\n    <video width=\"320\" height=\"240\" controls src=\"{s}/{s}\" type=\"video/mp4\" alt=\"{s}\">\n", .{
+            try std.fmt.format(writer, "\n    <code>{s}</code>\n    <video height=\"720\" controls src=\"{s}/{s}\" type=\"video/{s}\" alt=\"{s}\">\n", .{
                 filename,
                 media_path,
                 filename,
+                video.features.vid_kind.?.toString(),
                 filename,
             });
         } else {
-            try std.fmt.format(writer, "    <code>{}</code>\n    <video width=\"320\" height=\"240\" controls src=\"{s}/{}.mp4\" type=\"video/mp4\" alt=\"{}\">\n", .{
+            try std.fmt.format(writer, "\n    <code>{}</code>\n    <video height=\"720\" controls src=\"{s}/{}.mp4\" type=\"video/{s}\" alt=\"{}\">\n", .{
                 video.id,
                 media_path,
                 video.id,
+                video.features.vid_kind.?.toString(),
                 video.id,
             });
         }
@@ -156,12 +157,13 @@ pub fn normal(allocator: std.mem.Allocator, file: std.fs.File, id: u64, features
         const kind_label = ", kind: ".len;
         const kind_lable_wcs = @max("image".len, "file".len, "video".len);
         const mobile_label = ", on: mobile".len;
+        const video_kind = ", video_kind: ".len + 4;
 
         // features
         const date = 25; // iso-8601 date size
         const session_id = @as(comptime_int, @intFromFloat(@floor(@log10(@as(comptime_float, @floatFromInt(std.math.maxInt(i64))))))) + 2;
         
-        break :blk largest_id + id_label + date_label + session_id_label + kind_label + kind_lable_wcs + mobile_label + date + session_id;
+        break :blk largest_id + id_label + date_label + session_id_label + kind_label + kind_lable_wcs + mobile_label + video_kind + date + session_id;
     };
 
     var writer = file.writer();
@@ -205,15 +207,16 @@ pub fn normal(allocator: std.mem.Allocator, file: std.fs.File, id: u64, features
     }
 
     // write the file flag if it is one
-    if (features.filename != null and features.is_vid == null) {
+    if (features.filename != null and features.vid_kind == null) {
         const label = ", kind: file";
         try writer.writeAll(label);
         current_size += label.len;
     }
 
     // write the video flag if it is one
-    if (features.is_vid) |_| {
-        const label = ", kind: video";
+    if (features.vid_kind) |vid_kind| {
+        const label = try std.fmt.allocPrint(allocator, ", kind: video, video_kind: {s}", .{vid_kind.toString()});
+        defer allocator.free(label);
         try writer.writeAll(label);
         current_size += label.len;
     }
@@ -236,7 +239,7 @@ pub fn normal(allocator: std.mem.Allocator, file: std.fs.File, id: u64, features
             try file.writeAll(" ? <trimmed oats item>\n");
     } else if (features.image_filename) |filename| {
         try std.fmt.format(writer, " # {s}: <binary image data>\n", .{filename});
-    } else if (features.is_vid) |_| {
+    } else if (features.vid_kind) |_| {
         if (features.filename) |filename|
             try std.fmt.format(writer, " # {s}: <binary video data>\n", .{filename})
         else
