@@ -20,7 +20,7 @@ pub fn markdownImgs(writer: anytype, media_path: []const u8, images: []const ite
 
     // iterate through the images metadata and write that paths (media files should exist atp)
     for (images) |image| {
-        try std.fmt.format(writer, "    <code>{s}</code>\n    <img src=\"{s}/{s}\" alt=\"{s}\">\n", .{
+        try std.fmt.format(writer, "    <code>{s}</code>\n    <img height=\"720\" src=\"{s}/{s}\" alt=\"{s}\">\n", .{
             image.features.image_filename.?,
             media_path,
             image.features.image_filename.?,
