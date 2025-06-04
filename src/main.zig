@@ -697,8 +697,33 @@ pub fn main() !void {
         // count the stack items
         var count: usize = 0;
         while (read_ptr != stack_ptr) {
-            allocator.free(try oats.stack.readStackEntry(allocator, file, &read_ptr));
-            count += 1;
+            const start_idx = read_ptr + @sizeOf(u32);
+            const raw_item = try oats.stack.readStackEntry(allocator, file, &read_ptr);
+            defer allocator.free(raw_item);
+            const item = try oats.item.unpack(allocator, start_idx, raw_item);
+
+            // normal counting
+            if (args.len < 3) {
+                count += 1;
+                continue;
+            }
+
+            // if the not flag is enabled, then negate
+            const not = std.mem.eql(u8, args[2], "--not");
+
+            // if a condition is provided, then count the condition
+            for (args[if (not) 3 else 2..]) |attr| {
+                inline for (@typeInfo(oats.item.FeaturesBitfield).Struct.fields) |field| {
+                    if (comptime field.type == bool)
+                    if (std.mem.eql(u8, attr, field.name)) {
+                        if (@field(oats.item.featuresToBitfield(item.features), field.name) != not) // negates upon 'not' being true
+                            count += 1;
+                        break;
+                    };
+                } else {
+                    return error.AttributeNotFound;
+                }
+            }
         }
 
         std.debug.print("stack item count: ", .{});
@@ -1146,7 +1171,7 @@ fn printHelp() void {
         \\    pop  <?n>               | pops <n> (defaults to 1) items off the stack (removes it)
         \\    tail <?n>               | prints the last <n> (defaults to 1) stack items (thoughts/notes)
         \\    head <?n>               | prints the first <n> (defaults to 1) stack items (thoughts/notes)
-        \\    count                   | counts the amount of items on the stack and prints it to stdout
+        \\    count (--not) <?*attrs> | counts the amount of items on the stack that match the provided attribute criteria and prints it to stdout
         \\    sort                    | sorts the contents of the oats database based on id
         \\    markdown <tz> <?media>  | pretty-prints the items on the stack in the markdown format, provided with a timezone offset and a path to put media (images & videos) (discarded if not provided)
         \\    raw                     | writes the raw contents of the database to stdout (pipe to a file for backups)
