@@ -22,11 +22,14 @@ test binarySearch {
 
 /// Finds the location of an item in a sorted slice, otherwise where it should be
 pub fn binarySearch(comptime num_type: type, item: anytype, slice: []const @TypeOf(item), comptime f: fn(@TypeOf(item)) num_type) struct{bool, usize} {
+    // in case the slice is empty
+    if (slice.len == 0) return .{false, 0};
+
     var low: usize = 0;
-    var high: usize = slice.len - 1;
+    var high: isize = @as(isize, @intCast(slice.len)) - 1;
 
     while (low <= high) {
-        const mid = low + (high - low) / 2;
+        const mid = low + (@as(usize, @intCast(high)) - low) / 2;
 
         // check if x is present at mid
         if (f(slice[mid]) == f(item))
@@ -37,7 +40,7 @@ pub fn binarySearch(comptime num_type: type, item: anytype, slice: []const @Type
             low = mid + 1
         // if x lesser, ignore right half
         else
-            high = mid - 1;
+            high = @intCast(mid - 1);
     }
 
     // if this is reached, then item is not present

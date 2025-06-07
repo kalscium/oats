@@ -20,7 +20,7 @@ pub fn markdownImgs(writer: anytype, media_path: []const u8, images: []const ite
 
     // iterate through the images metadata and write that paths (media files should exist atp)
     for (images) |image| {
-        try std.fmt.format(writer, "    <code>{s}</code>\n    <img height=\"720\" src=\"{s}/{s}\" alt=\"{s}\">\n", .{
+        try std.fmt.format(writer, "\n    <code>{s}</code>\n    <img height=\"720\" src=\"{s}/{s}\" alt=\"{s}\">\n", .{
             image.features.image_filename.?,
             media_path,
             image.features.image_filename.?,
@@ -67,7 +67,7 @@ pub fn markdownVideo(writer: anytype, media_path: []const u8, videos: []const it
 
 /// Writes a file to a stream in the markdown format
 pub fn markdownFile(writer: anytype, media_path: []const u8, filename: []const u8) !void {
-    try std.fmt.format(writer, "<i>Included File <a href=\"file://{s}/{s}\">'{s}'</a> (<code>{s}/{s}</code>)</i>\n", .{
+    try std.fmt.format(writer, "\n<i>Included File <a href=\"file://{s}/{s}\">'{s}'</a> (<code>{s}/{s}</code>)</i>\n", .{
         media_path,
         filename,
         filename,
