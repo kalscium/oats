@@ -87,17 +87,17 @@ pub fn markdownHeader(writer: anytype, tz_offset: i16, features: item.Features, 
         return;
 
     // get the timezone, accounting for daylight savings (approx)
-    var timezone = datetime.Timezone.create("CustomOffset", tz_offset);
-    var date = datetime.Datetime.fromTimestamp(features.timestamp.?).shiftTimezone(&timezone);
+    var timezone = datetime.Timezone.create("CustomOffset", tz_offset, .no_dst); // they recently added support for dst, but I'll stick to my implementation due to simplicity reasons
+    var date = datetime.Datetime.fromTimestamp(features.timestamp.?).shiftTimezone(timezone);
     if (date.date.month >= 4) {
-        timezone = datetime.Timezone.create("SCustomOffset", tz_offset-60);
-        date = datetime.Datetime.fromTimestamp(features.timestamp.?).shiftTimezone(&timezone);
+        timezone = datetime.Timezone.create("SCustomOffset", tz_offset-60, .no_dst);
+        date = datetime.Datetime.fromTimestamp(features.timestamp.?).shiftTimezone(timezone);
     }
 
     // get the day, month and year
     var prev_date: datetime.Datetime = undefined;
     if (prev_features.timestamp) |timestamp| {
-        prev_date = datetime.Datetime.fromTimestamp(timestamp).shiftTimezone(&timezone);
+        prev_date = datetime.Datetime.fromTimestamp(timestamp).shiftTimezone(timezone);
     }
 
     // if it's not the same day, or the previous item had no date, then write the date

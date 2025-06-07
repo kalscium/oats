@@ -81,7 +81,7 @@ pub fn featuresSize(features: Features) usize {
     var size: usize = @sizeOf(FeaturesBitfield);
 
     // generic comptime for getting the struct size of features
-    inline for (comptime @typeInfo(Features).Struct.fields) |field| {
+    inline for (comptime @typeInfo(Features).@"struct".fields) |field| {
         // only add to it, if it's enabled
         if (@field(features, field.name)) |feature|
             size += @sizeOf(@TypeOf(feature));

@@ -716,7 +716,7 @@ pub fn main() !void {
 
             // if a condition is provided, then count the condition
             for (args[if (not) 3 else 2..]) |attr| {
-                inline for (@typeInfo(oats.item.FeaturesBitfield).Struct.fields) |field| {
+                inline for (@typeInfo(oats.item.FeaturesBitfield).@"struct".fields) |field| {
                     if (comptime field.type == bool)
                     if (std.mem.eql(u8, attr, field.name)) {
                         if (@field(oats.item.featuresToBitfield(item.features), field.name) != not) // negates upon 'not' being true
@@ -1044,7 +1044,7 @@ pub fn main() !void {
             // comptime attribute trimming
             // ugly & inefficient, but works
             for (args[2..args.len-1]) |attr| {
-                inline for (@typeInfo(oats.item.FeaturesBitfield).Struct.fields) |field|{
+                inline for (@typeInfo(oats.item.FeaturesBitfield).@"struct".fields) |field|{
                     if (comptime field.type == bool)
                     if (std.mem.eql(u8, field.name, attr) or std.mem.eql(u8, attr, "everything")) {
                         // check if the item should be trimmed
@@ -1124,7 +1124,7 @@ pub fn main() !void {
             // comptime attribute filtering
             // ugly & inefficient, but works
             for (args[2..args.len-1]) |attr| {
-                inline for (@typeInfo(oats.item.FeaturesBitfield).Struct.fields) |field|{
+                inline for (@typeInfo(oats.item.FeaturesBitfield).@"struct".fields) |field|{
                     if (comptime field.type == bool)
                     if (std.mem.eql(u8, field.name, attr)) {
                         // check if the item should be trimmed

@@ -44,7 +44,7 @@ pub fn build(b: *std.Build) void {
     });
 
     // add the datetime dependency
-    const datetime = b.dependency("zig-datetime", .{
+    const datetime = b.dependency("datetime", .{
         .target = target,
         .optimize = optimize,
     });
@@ -54,9 +54,9 @@ pub fn build(b: *std.Build) void {
     exe.root_module.addOptions("options", options);
 
     // add imports
-    lib.root_module.addImport("datetime", datetime.module("zig-datetime"));
+    lib.root_module.addImport("datetime", datetime.module("datetime"));
     exe.linkLibC();
-    exe.root_module.addImport("oats", &lib.root_module);
+    exe.root_module.addImport("oats", lib.root_module);
 
     // This declares intent for the executable to be installed into the
     // standard location when the user invokes the "install" step (the default
