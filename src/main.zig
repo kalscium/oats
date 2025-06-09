@@ -211,7 +211,7 @@ pub fn pushVid(allocator: std.mem.Allocator, session_id: ?i64, vid_paths: []cons
     // if no paths provided, simply read from stdin
     if (vid_paths.len == 0) {
         // open the video file
-        const video = try std.io.getStdIn().readToEndAlloc(allocator, 1024 * 1024 * 1024 * 4); // 4GiB limit
+        const video = try std.io.getStdIn().readToEndAlloc(allocator, 1024 * 1024 * 1024 * 4 - 1); // 4GiB limit
         defer allocator.free(video);
 
         // read the magic and determine their kind
@@ -338,6 +338,9 @@ pub fn main() !void {
     // checks for the 'version' command
     if (std.mem.eql(u8, args[1], "--version") or std.mem.eql(u8, args[1], "-V"))
         return std.debug.print("oats {s}\n", .{oats.version});
+    // checks for the debug help command
+    if (std.mem.eql(u8, args[1], "--debug-help") or std.mem.eql(u8, args[1], "-H"))
+        return printDbgHelp();
 
     // checks for the 'wipe' command
     if (std.mem.eql(u8, args[1], "wipe")) {
@@ -1159,6 +1162,115 @@ pub fn main() !void {
         return;
     }
 
+    // checks for the 'dbgsetid' command
+    if (std.mem.eql(u8, args[1], "dbgsetid")) {
+        // check for the arg
+        if (args.len < 4) {
+            printHelp();
+            return error.ExpectedArgument;
+        }
+
+        const path = try databaseExists(allocator);
+        defer allocator.free(path);
+
+        const file = try openOatsDB(path);
+        defer file.close();
+
+        // get the stack ptr
+        try file.seekTo(oats.stack.stack_ptr_loc);
+        const stack_ptr = try file.reader().readInt(u64, .big);
+
+        // read ptr instead of stack ptr (read from start)
+        var read_ptr: u64 = oats.stack.stack_start_loc;
+
+        // the found item start index
+        var found_start_idx: ?u64 = null;
+
+        // iterate through the oats items until you find the oat id you want to edit
+        while (read_ptr != stack_ptr) {
+            // read the item
+            const start_idx = read_ptr + @sizeOf(u32);
+            const raw_item = try oats.stack.readStackEntry(allocator, file, &read_ptr);
+            defer allocator.free(raw_item);
+            const item = try oats.item.unpack(allocator, start_idx, raw_item);
+
+            // if the item is found, change it's id (fmt: start_idx + u32)
+            if (item.id == try std.fmt.parseInt(u64, args[2], 10))
+                found_start_idx = start_idx;
+        }
+
+        // why do it this way?
+        // so in the case of duplicates,
+        // it changes the id of the latest one first
+        // (oldest takes precedence)
+
+        if (found_start_idx) |start_idx| {
+            try file.seekTo(start_idx);
+            const new_id = try std.fmt.parseInt(u64, args[3], 10);
+            try file.writer().writeInt(u64, new_id, .big);
+            std.debug.print("updated oats id to '{}'\n", .{ new_id });
+        } else {
+            return error.OatsItemNotFound;
+        }
+
+        return;
+    }
+
+    // checks for the 'dbgsettime' command
+    if (std.mem.eql(u8, args[1], "dbgsettime")) {
+        // check for the arg
+        if (args.len < 4) {
+            printHelp();
+            return error.ExpectedArgument;
+        }
+
+        const path = try databaseExists(allocator);
+        defer allocator.free(path);
+
+        const file = try openOatsDB(path);
+        defer file.close();
+
+        // get the stack ptr
+        try file.seekTo(oats.stack.stack_ptr_loc);
+        const stack_ptr = try file.reader().readInt(u64, .big);
+
+        // read ptr instead of stack ptr (read from start)
+        var read_ptr: u64 = oats.stack.stack_start_loc;
+
+        // the found item start index
+        var found_start_idx: ?u64 = null;
+
+        // iterate through the oats items until you find the oat id you want to edit
+        while (read_ptr != stack_ptr) {
+            // read the item
+            const start_idx = read_ptr + @sizeOf(u32);
+            const raw_item = try oats.stack.readStackEntry(allocator, file, &read_ptr);
+            defer allocator.free(raw_item);
+            const item = try oats.item.unpack(allocator, start_idx, raw_item);
+
+            // if the item is found
+            // and it already has a timestamp
+            if (item.id == try std.fmt.parseInt(u64, args[2], 10) and item.features.timestamp != null)
+                found_start_idx = start_idx;
+        }
+
+        // why do it this way?
+        // so in the case of duplicates,
+        // it changes the timestamp of the latest one first
+        // (oldest takes precedence)
+
+        if (found_start_idx) |start_idx| {
+            try file.seekTo(start_idx + @sizeOf(u64) + @sizeOf(u8)); // skip id & features bitfield
+            const timestamp = try std.fmt.parseInt(u64, args[3], 10);
+            try file.writer().writeInt(u64, timestamp, .big);
+            std.debug.print("updated oats timestamp to '{}'\n", .{timestamp});
+        } else {
+            return error.OatsItemNotFound;
+        }
+
+        return;
+    }
+
     // only occurs when there is an invalid command
     printHelp();
     return error.CommandNotFound;
@@ -1191,4 +1303,20 @@ fn printHelp() void {
         \\
     ;
     std.debug.print(help, .{});
+}
+
+/// Prints the dbgHelp menu message for this cli
+fn printDbgHelp() void {
+    const dbg_help =
+        \\Usage: oats dbg[command]
+        \\Commands:
+        \\    setid <item_id> <new_id> | replaces the id of an item with <new_id>
+        \\    settime <item_id> <time> | replaces the timestamp of an item (only works if the item already has a timestamp)
+        \\Options:
+        \\    -h, --help               | prints the cli help message
+        \\    -H, --debug-help         | prints the cli help message
+        \\    -V, --version            | prints the version
+        \\
+    ;
+    std.debug.print(dbg_help, .{});
 }
