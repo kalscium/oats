@@ -5,7 +5,6 @@ const std = @import("std");
 /// A bitfield that determines the features enabled in each item (for easy
 /// backwards compatibility)
 pub const FeaturesBitfield = packed struct(u8) {
-    /// (does nothing now) in case in the future I need more features
     extended: bool = false,
     has_timestamp: bool,
     has_session_id: bool,
@@ -16,6 +15,14 @@ pub const FeaturesBitfield = packed struct(u8) {
     is_vid: bool,
 
     _padding: u0 = 0,
+};
+
+/// A extension to the features bitfield
+pub const FeaturesBitfieldExt1 = packed struct (u8) {
+    /// in case I want *another* extension
+    extended: bool = false,
+
+    _padding: u8 = 0,
 };
 
 /// General metadata of a stack item (for reading) so you don't have to keep
@@ -196,6 +203,13 @@ pub fn unpack(allocator: std.mem.Allocator, start_idx: usize, item: []const u8) 
     // decode the features bitfield
     const features_bitfield: FeaturesBitfield = @bitCast(std.mem.bigToNative(u8, item[offset]));
     offset += @sizeOf(u8);
+
+    // decode the extended bitfield
+    var bitfield_ext1 = null;
+    if (features_bitfield.extended) {
+        bitfield_ext1 = @bitCast(std.mem.bigToNative(u8, item[offset]));
+        offset += @sizeOf(u8);
+    }
 
     // decode the date
     if (features_bitfield.has_timestamp) {
