@@ -155,6 +155,7 @@ pub fn pushImg(allocator: std.mem.Allocator, session_id: ?i64, img_paths: []cons
         try oats.stack.push(file, &stack_ptr, item);
 
         std.debug.print("pushed image '{s}'\n", .{img_path});
+        std.Thread.sleep(1000000); // wait a millisecond so the next image has a unique id
     }
 
     // update the stack ptr
@@ -204,6 +205,7 @@ pub fn pushVid(allocator: std.mem.Allocator, session_id: ?i64, vid_paths: []cons
         try oats.stack.push(file, &stack_ptr, item);
 
         std.debug.print("pushed video '{s}'\n", .{vid_path});
+        std.Thread.sleep(1000000); // wait a millisecond so the next video has a unique id
     }
     
     // if no paths provided, simply read from stdin
@@ -273,6 +275,7 @@ pub fn pushFile(allocator: std.mem.Allocator, session_id: ?i64, paths: []const [
         try oats.stack.push(file, &stack_ptr, item);
 
         std.debug.print("pushed file '{s}'\n", .{path});
+        std.Thread.sleep(1000000); // wait a millisecond so the next file has a unique id
     }
 
     // update the stack ptr
