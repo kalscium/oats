@@ -864,13 +864,14 @@ pub fn main() !void {
 
                 // if it's a trimmed item, then count them and write it
                 if (item.features.is_void != null) {
-                    const start = i;
-                    while (i < collection.items.len and collection.items[i].features.is_void != null)
-                        i += 1;
-                    const items = i - start;
-                    try std.fmt.format(buffered.writer(), "*{} Trimmed Item", .{items});
+                    var void_idx = i;
+                    while (void_idx < collection.items.len and collection.items[void_idx].features.is_void != null)
+                        void_idx += 1;
+                    const items = void_idx - i;
+                    i = void_idx - 1;
+                    try std.fmt.format(buffered.writer(), "\n*{} Trimmed Item", .{items});
                     if (items > 1) _ = try buffered.writer().writeByte('s');
-                    try buffered.writer().writeAll("*\n");
+                    try buffered.writer().writeAll("*\n\n");
                     continue;
                 }
 
