@@ -704,6 +704,9 @@ pub fn session(allocator: std.mem.Allocator, file: std.fs.File, isession_id: i64
         defer line.deinit();
         if (line.items.len == 0) continue;
 
+        // wait for a millisecond to avoid id/timestamp cobbling
+        std.time.sleep(1000000);
+
         // pack the read line
         const timestamp = std.time.milliTimestamp();
         const item = try oats.item.pack(allocator, @bitCast(timestamp), .{
