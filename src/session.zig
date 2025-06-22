@@ -74,14 +74,22 @@ pub fn enableRawMode() !TerminalFlags {
         return orig;
     } else if (comptime builtin.os.tag == .windows) {
         // flags
-        var orig: std.os.windows.DWORD = undefined;
-        const handle = std.os.windows.kernel32.GetStdHandle(std.os.windows.STD_INPUT_HANDLE) orelse return error.ConsoleDevMissingHandle;
-        _ = std.os.windows.kernel32.GetConsoleMode(handle, &orig);
-        const flags = orig & ~@as(std.os.windows.DWORD, 0x0002 | 0x0001 | 0x0004 | 0x0010 | 0x0020 | 0x0200);
+        var inorig: std.os.windows.DWORD = undefined;
+        const inhandle = std.os.windows.kernel32.GetStdHandle(std.os.windows.STD_INPUT_HANDLE) orelse return error.ConsoleDevMissingHandle;
+        _ = std.os.windows.kernel32.GetConsoleMode(inhandle, &inorig);
+        var outorig: std.os.windows.DWORD = undefined;
+        const outhandle = std.os.windows.kernel32.GetStdHandle(std.os.windows.STD_INPUT_HANDLE) orelse return error.ConsoleDevMissingHandle;
+        _ = std.os.windows.kernel32.GetConsoleMode(outhandle, &outorig);
+        const windows = @cImport(@cInclude("windows.h"));
+        // const flags = orig & comptime ~@as(std.os.windows.DWORD, 0x0004 | 0x0010 | 0x0001 | 0x0040 | 0x0001 | 0x0002 | 0x0020 | 0x0008) | 0x0200 | 0x0004;
 
-        _ = std.os.windows.kernel32.SetConsoleMode(handle, flags);
+        const inflags = inorig | windows.ENABLE_VIRTUAL_TERMINAL_INPUT;
+        const outflags = outorig | windows.ENABLE_VIRTUAL_TERMINAL_PROCESSING | windows.DISABLE_NEWLINE_AUTO_RETURN;
 
-        return orig;
+        _ = std.os.windows.kernel32.SetConsoleMode(inhandle, inflags);
+        _ = std.os.windows.kernel32.SetConsoleMode(outhandle, outflags);
+
+        return inflags;
     } else @compileError("unsupported operating system");
 }
 
@@ -638,7 +646,7 @@ pub fn readCommand(allocator: std.mem.Allocator, sess_id: *i64) anyerror!void {
         // pop the last item
         const raw_last = try oats.stack.pop(allocator, file, &stack_ptr);
         defer allocator.free(raw_last);
-        const last = try oats.item.unpack(allocator, stack_ptr + @sizeOf(u32), raw_last);
+        const last = try oats.item.unpack(allocator, @intCast(stack_ptr + @sizeOf(u32)), raw_last);
 
         // throw error on images, files or void
         if (last.features.image_filename) |_|

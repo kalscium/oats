@@ -13,7 +13,7 @@ inline fn convert24to12(num: anytype) @TypeOf(num) {
 /// Writes a image stack items to a stream in the 'markdown' format, given the last stack item
 pub fn markdownImgs(writer: anytype, media_path: []const u8, images: []const item.Metadata) !void {
     // write the opening HTML tag
-    try std.fmt.format(writer, "<details>\n    <summary><i>{} Included Image{s}</i></summary>\n", .{
+    try std.fmt.format(writer, "\n<details>\n    <summary><i>{} Included Image{s}</i></summary>\n", .{
         images.len,
         if (images.len > 1) "s" else "",
     });
@@ -29,13 +29,13 @@ pub fn markdownImgs(writer: anytype, media_path: []const u8, images: []const ite
     }
 
     // write the closing HTML tag
-    try writer.writeAll("</details>\n");
+    try writer.writeAll("</details>\n\n");
 }
 
 /// Writes a video stack items to a stream in the 'markdown' format, given the last stack item
 pub fn markdownVideo(writer: anytype, media_path: []const u8, videos: []const item.Metadata) !void {
     // write the opening HTML tag
-    try std.fmt.format(writer, "<details>\n    <summary><i>{} Included Video{s}</i></summary>\n", .{
+    try std.fmt.format(writer, "\n<details>\n    <summary><i>{} Included Video{s}</i></summary>\n", .{
         videos.len,
         if (videos.len > 1) "s" else "",
     });
@@ -62,12 +62,12 @@ pub fn markdownVideo(writer: anytype, media_path: []const u8, videos: []const it
     }
 
     // write the closing HTML tag
-    try writer.writeAll("</details>\n");
+    try writer.writeAll("</details>\n\n");
 }
 
 /// Writes a file to a stream in the markdown format
 pub fn markdownFile(writer: anytype, media_path: []const u8, filename: []const u8) !void {
-    try std.fmt.format(writer, "\n<i>Included File <a href=\"file://{s}/{s}\">'{s}'</a> (<code>{s}/{s}</code>)</i>\n", .{
+    try std.fmt.format(writer, "\n<i>Included File <a href=\"file://{s}/{s}\">'{s}'</a> (<code>{s}/{s}</code>)</i>\n\n", .{
         media_path,
         filename,
         filename,
