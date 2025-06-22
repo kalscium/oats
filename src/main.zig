@@ -107,6 +107,7 @@ pub fn pop(allocator: std.mem.Allocator, to_pop: usize) !void {
         const raw_item = try oats.stack.pop(allocator, file, &stack_ptr);
         defer allocator.free(raw_item);
         const item = try oats.item.unpack(allocator, stack_ptr + @sizeOf(u32), raw_item);
+        defer oats.item.freeFeatures(allocator, item.features);
 
         // read it's contents
         const contents = try allocator.alloc(u8, item.size - item.contents_offset);
@@ -304,6 +305,7 @@ pub fn tail(allocator: std.mem.Allocator, to_pop: usize) !void {
         const raw_item = try oats.stack.pop(allocator, file, &stack_ptr);
         defer allocator.free(raw_item);
         const item = try oats.item.unpack(allocator, stack_ptr + @sizeOf(u32), raw_item);
+        defer oats.item.freeFeatures(allocator, item.features);
 
         // read it's contents
         const contents = try allocator.alloc(u8, item.size - item.contents_offset);
@@ -320,13 +322,14 @@ pub fn tail(allocator: std.mem.Allocator, to_pop: usize) !void {
 
 pub fn main() !void {
     // initialize the allocator
-    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-    defer arena.deinit();
-    const allocator = arena.allocator();
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer if (gpa.deinit() == .leak)
+        std.log.err("Memory Leak", .{});
+    const allocator = gpa.allocator();
 
     // get the arguments
     const args = try std.process.argsAlloc(allocator);
-    defer allocator.free(args);
+    defer std.process.argsFree(allocator, args);
 
     // check for no arguments
     if (args.len == 1)
@@ -503,6 +506,7 @@ pub fn main() !void {
             const raw_item = try oats.stack.readStackEntry(allocator, file, &read_ptr);
             defer allocator.free(raw_item);
             const item = try oats.item.unpack(allocator, start_idx, raw_item);
+            defer oats.item.freeFeatures(allocator, item.features);
 
             // read the contents
             const contents = try allocator.alloc(u8, item.size - item.contents_offset);
@@ -544,6 +548,7 @@ pub fn main() !void {
             const raw_item = try oats.stack.readStackEntry(allocator, file, &read_ptr);
             defer allocator.free(raw_item);
             const item = try oats.item.unpack(allocator, start_idx, raw_item);
+            defer oats.item.freeFeatures(allocator, item.features);
 
             if (item.features.is_void == null) try items.append(item)
             else try void_items.append(item);
@@ -630,6 +635,7 @@ pub fn main() !void {
             const raw_item = try oats.stack.readStackEntry(allocator, file, &read_ptr);
             defer allocator.free(raw_item);
             const item = try oats.item.unpack(allocator, start_idx, raw_item);
+            defer oats.item.freeFeatures(allocator, item.features);
             try items.append(item);
         }
         // sort the ids (for binary search)
@@ -661,6 +667,7 @@ pub fn main() !void {
             const raw_item = try oats.stack.readStackEntry(allocator, ifile, &read_ptr);
             defer allocator.free(raw_item);
             const item = try oats.item.unpack(allocator, start_idx, raw_item);
+            defer oats.item.freeFeatures(allocator, item.features);
 
             // make sure there are no duplicates
 
@@ -710,6 +717,7 @@ pub fn main() !void {
             const raw_item = try oats.stack.readStackEntry(allocator, file, &read_ptr);
             defer allocator.free(raw_item);
             const item = try oats.item.unpack(allocator, start_idx, raw_item);
+            defer oats.item.freeFeatures(allocator, item.features);
 
             // normal counting
             if (args.len < 3) {
@@ -812,6 +820,7 @@ pub fn main() !void {
             const raw_item = try oats.stack.readStackEntry(allocator, file, &read_ptr);
             defer allocator.free(raw_item);
             const item = try oats.item.unpack(allocator, start_idx, raw_item);
+            defer oats.item.freeFeatures(allocator, item.features);
 
             // if it has a session id, then append to that session
             if (item.features.session_id) |id| {
@@ -1045,6 +1054,7 @@ pub fn main() !void {
             const raw_item = try oats.stack.readStackEntry(allocator, ifile, &read_ptr);
             defer allocator.free(raw_item);
             const item = try oats.item.unpack(allocator, start_idx, raw_item);
+            defer oats.item.freeFeatures(allocator, item.features);
 
             const item_features_bitfield = oats.item.featuresToBitfield(item.features);
 
@@ -1125,6 +1135,7 @@ pub fn main() !void {
             const raw_item = try oats.stack.readStackEntry(allocator, ifile, &read_ptr);
             defer allocator.free(raw_item);
             const item = try oats.item.unpack(allocator, start_idx, raw_item);
+            defer oats.item.freeFeatures(allocator, item.features);
 
             const item_features_bitfield = oats.item.featuresToBitfield(item.features);
 
@@ -1194,6 +1205,7 @@ pub fn main() !void {
             const raw_item = try oats.stack.readStackEntry(allocator, file, &read_ptr);
             defer allocator.free(raw_item);
             const item = try oats.item.unpack(allocator, start_idx, raw_item);
+            defer oats.item.freeFeatures(allocator, item.features);
 
             // if the item is found, change it's id (fmt: start_idx + u32)
             if (item.id == try std.fmt.parseInt(u64, args[2], 10))
@@ -1248,6 +1260,7 @@ pub fn main() !void {
             const raw_item = try oats.stack.readStackEntry(allocator, file, &read_ptr);
             defer allocator.free(raw_item);
             const item = try oats.item.unpack(allocator, start_idx, raw_item);
+            defer oats.item.freeFeatures(allocator, item.features);
 
             // if the item is found
             // and it already has a timestamp

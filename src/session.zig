@@ -647,6 +647,7 @@ pub fn readCommand(allocator: std.mem.Allocator, sess_id: *i64) anyerror!void {
         const raw_last = try oats.stack.pop(allocator, file, &stack_ptr);
         defer allocator.free(raw_last);
         const last = try oats.item.unpack(allocator, @intCast(stack_ptr + @sizeOf(u32)), raw_last);
+        defer oats.item.freeFeatures(allocator, last.features);
 
         // throw error on images, files or void
         if (last.features.image_filename) |_|

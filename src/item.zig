@@ -181,7 +181,20 @@ pub fn pack(allocator: std.mem.Allocator, id: u64, features: Features, contents:
     return buffer;
 }
 
+/// Frees the features of a stack item
+pub fn freeFeatures(allocator: std.mem.Allocator, features: Features) void {
+    if (features.image_filename) |filename| {
+        allocator.free(filename);
+    }
+
+    if (features.filename) |filename| {
+        allocator.free(filename);
+    }
+}
+
 /// Unpacks the stack item from it's encoded form and also it's location (offset) in the database file
+/// 
+/// Returns the metadata, (and filenames) owned by the caller
 pub fn unpack(allocator: std.mem.Allocator, start_idx: usize, item: []const u8) !Metadata {
     // offset to make things easier
     var offset: usize = 0;
