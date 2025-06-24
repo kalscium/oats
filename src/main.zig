@@ -810,7 +810,11 @@ pub fn main() !void {
         var collections = std.AutoHashMap(i64, std.ArrayList(oats.item.Metadata)).init(allocator);
         defer { // free everything
             var iter = collections.valueIterator();
-            while (iter.next()) |list| list.deinit();
+            while (iter.next()) |list| {
+                for (list.items) |item|
+                    oats.item.freeFeatures(allocator, item.features);
+                list.deinit();
+            }
             collections.deinit();
         }
         var null_sess_prev: ?i64 = null; // if the last thought had a null session id, then this would have the id/timestamp of it
@@ -820,7 +824,7 @@ pub fn main() !void {
             const raw_item = try oats.stack.readStackEntry(allocator, file, &read_ptr);
             defer allocator.free(raw_item);
             const item = try oats.item.unpack(allocator, start_idx, raw_item);
-            defer oats.item.freeFeatures(allocator, item.features);
+            // no free, as it'll be freed later in one large swoop in the ArrayList
 
             // if it has a session id, then append to that session
             if (item.features.session_id) |id| {
