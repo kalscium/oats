@@ -166,6 +166,7 @@ pub fn readLine(allocator: std.mem.Allocator, comptime prompt_len: usize, prompt
     // can you imagine if I added line scrolling? that would be painful.
 
     var line = std.ArrayList(u8).init(allocator);
+    errdefer line.deinit();
 
     var cursor: usize = line.items.len; // index into the line
     var escape = false; // if parsing escape code

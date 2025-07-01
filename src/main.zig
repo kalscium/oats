@@ -78,6 +78,7 @@ pub fn openOatsDB(path: []const u8) !std.fs.File {
 pub fn databaseExists(allocator: std.mem.Allocator) ![]const u8 {
     // if database file doesn't exist throw error
     const path = try oats.getHome(allocator);
+    errdefer allocator.free(path);
     if (std.fs.cwd().access(path, .{})) {
         return path;
     } else |err| {
@@ -1074,6 +1075,7 @@ pub fn main() !void {
                             var features = item.features;
                             features.is_void = {};
                             const stubbed = try oats.item.pack(allocator, item.id, features, &.{});
+                            defer allocator.free(stubbed);
 
                             try oats.stack.push(ofile, &ostack_ptr, stubbed);
 
@@ -1155,6 +1157,7 @@ pub fn main() !void {
                             var features = item.features;
                             features.is_void = {};
                             const stubbed = try oats.item.pack(allocator, item.id, features, &.{});
+                            defer allocator.free(stubbed);
 
                             try oats.stack.push(ofile, &ostack_ptr, stubbed);
 

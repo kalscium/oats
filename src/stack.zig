@@ -38,6 +38,7 @@ pub fn pop(allocator: std.mem.Allocator, file: std.fs.File, stack_ptr: *u64) ![]
     // seek to the start of the stack entry's contents, read it to a buffer
     stack_ptr.* -= length;
     const buffer: []u8 = try allocator.alloc(u8, length);
+    errdefer allocator.free(buffer);
     try file.seekTo(stack_ptr.*);
     _ = try reader.readAll(buffer);
 
@@ -65,6 +66,7 @@ pub fn readStackEntry(allocator: std.mem.Allocator, file: std.fs.File, read_ptr:
 
     // read and allocate the actual contents of the stack entry
     const buffer: []u8 = try allocator.alloc(u8, length);
+    errdefer allocator.free(buffer);
     _ = try reader.readAll(buffer);
 
     // update the read ptr and return

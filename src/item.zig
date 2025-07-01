@@ -120,6 +120,7 @@ pub fn featuresToBitfield(features: Features) FeaturesBitfield {
 pub fn pack(allocator: std.mem.Allocator, id: u64, features: Features, contents: []const u8) ![]const u8 {
     const total_size = @sizeOf(@TypeOf(id)) + featuresSize(features) + contents.len;
     const buffer = try allocator.alloc(u8, total_size);
+    errdefer comptime unreachable; // no more errors beyond this point
 
     // offset to make things easier (no collisions)
     var offset: usize = 0;
@@ -236,6 +237,9 @@ pub fn unpack(allocator: std.mem.Allocator, start_idx: usize, item: []const u8) 
         features.image_filename = filename;
     }
 
+    errdefer if (features.image_filename) |filename|
+        allocator.free(filename);
+
     // decode the file metadata
     if (features_bitfield.is_file) {
         // decode the filename length
@@ -249,6 +253,9 @@ pub fn unpack(allocator: std.mem.Allocator, start_idx: usize, item: []const u8) 
         offset += fn_len;
         features.filename = filename;
     }
+
+    errdefer if (features.filename) |filename|
+        allocator.free(filename);
 
     // decode the video kind
     if (features_bitfield.is_vid) {
